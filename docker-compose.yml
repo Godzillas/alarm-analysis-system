@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: alarm_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: alarm123456
+      MYSQL_DATABASE: alarm_system
+      MYSQL_USER: alarm_user
+      MYSQL_PASSWORD: alarm123456
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    restart: unless-stopped
+    networks:
+      - alarm_network
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: alarm_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - alarm_network
+
+  # 告警系统主应用
+  alarm_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alarm_app
+    environment:
+      - DATABASE_URL=mysql+aiomysql://alarm_user:alarm123456@mysql:3306/alarm_system
+      - REDIS_URL=redis://redis:6379/0
+      - DEBUG=false
+      - HOST=0.0.0.0
+      - PORT=8000
+      - SECRET_KEY=alarm-system-mvp-secret-key-change-in-production
+      - LOG_LEVEL=INFO
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+      - ./static:/app/static
+    depends_on:
+      - mysql
+      - redis
+    restart: unless-stopped
+    networks:
+      - alarm_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mysql_data:
+  redis_data:
+
+networks:
+  alarm_network:
+    driver: bridge

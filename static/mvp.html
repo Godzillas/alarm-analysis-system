@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能告警分析系统 - MVP</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+        }
+        
+        .header {
+            background: #409eff;
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 500;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .critical { color: #f56c6c; }
+        .high { color: #e6a23c; }
+        .medium { color: #409eff; }
+        .low { color: #67c23a; }
+        .info { color: #909399; }
+        
+        .actions {
+            margin-bottom: 2rem;
+        }
+        
+        .btn {
+            background: #409eff;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 0.5rem;
+            font-size: 0.9rem;
+        }
+        
+        .btn:hover {
+            background: #337ecc;
+        }
+        
+        .btn-success {
+            background: #67c23a;
+        }
+        
+        .btn-success:hover {
+            background: #529b2e;
+        }
+        
+        .alerts-section {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .section-header {
+            background: #f8f9fa;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #eee;
+            font-weight: 500;
+        }
+        
+        .alert-item {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .alert-item:last-child {
+            border-bottom: none;
+        }
+        
+        .alert-info {
+            flex: 1;
+        }
+        
+        .alert-title {
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+        }
+        
+        .alert-meta {
+            font-size: 0.8rem;
+            color: #666;
+        }
+        
+        .alert-severity {
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            margin-left: 1rem;
+        }
+        
+        .severity-critical {
+            background: #fef0f0;
+            color: #f56c6c;
+        }
+        
+        .severity-high {
+            background: #fdf6ec;
+            color: #e6a23c;
+        }
+        
+        .severity-medium {
+            background: #ecf5ff;
+            color: #409eff;
+        }
+        
+        .severity-low {
+            background: #f0f9ff;
+            color: #67c23a;
+        }
+        
+        .severity-info {
+            background: #f4f4f5;
+            color: #909399;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+        
+        .error {
+            background: #fef0f0;
+            color: #f56c6c;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚨 智能告警分析系统 MVP</h1>
+    </div>
+    
+    <div class="container">
+        <!-- 统计卡片 -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value critical" id="totalAlerts">-</div>
+                <div class="stat-label">总告警数</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value high" id="activeAlerts">-</div>
+                <div class="stat-label">活跃告警</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value medium" id="resolvedAlerts">-</div>
+                <div class="stat-label">已解决</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value low" id="criticalAlerts">-</div>
+                <div class="stat-label">严重告警</div>
+            </div>
+        </div>
+        
+        <!-- 操作按钮 -->
+        <div class="actions">
+            <button class="btn" onclick="refreshData()">🔄 刷新数据</button>
+            <button class="btn btn-success" onclick="sendTestAlert()">📝 发送测试告警</button>
+            <button class="btn" onclick="window.open('/docs', '_blank')">📚 API文档</button>
+        </div>
+        
+        <!-- 告警列表 -->
+        <div class="alerts-section">
+            <div class="section-header">
+                📋 最新告警 (最近20条)
+            </div>
+            <div id="alertsList">
+                <div class="loading">正在加载告警数据...</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <p>智能告警分析系统 MVP - 基于 FastAPI + Vue3 构建</p>
+        <p>🔗 <a href="/docs" target="_blank">API文档</a> | 📊 <a href="/admin" target="_blank">管理后台</a></p>
+    </div>
+
+    <script>
+        // API 基础URL
+        const API_BASE = '';
+        
+        // 获取告警统计
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/alarms/stats/summary');
+                const stats = await response.json();
+                
+                document.getElementById('totalAlerts').textContent = stats.total || 0;
+                document.getElementById('activeAlerts').textContent = stats.active || 0;
+                document.getElementById('resolvedAlerts').textContent = stats.resolved || 0;
+                document.getElementById('criticalAlerts').textContent = stats.critical || 0;
+            } catch (error) {
+                console.error('加载统计数据失败:', error);
+            }
+        }
+        
+        // 获取告警列表
+        async function loadAlerts() {
+            try {
+                const response = await fetch('/api/alarms/?limit=20');
+                const result = await response.json();
+                const alerts = result.data || [];
+                
+                const container = document.getElementById('alertsList');
+                
+                if (alerts.length === 0) {
+                    container.innerHTML = '<div class="loading">暂无告警数据</div>';
+                    return;
+                }
+                
+                const html = alerts.map(alert => `
+                    <div class="alert-item">
+                        <div class="alert-info">
+                            <div class="alert-title">${alert.title}</div>
+                            <div class="alert-meta">
+                                🏠 ${alert.host || 'N/A'} | 
+                                🔧 ${alert.service || 'N/A'} | 
+                                📍 ${alert.source || 'N/A'} | 
+                                ⏰ ${new Date(alert.created_at).toLocaleString()}
+                            </div>
+                        </div>
+                        <div class="alert-severity severity-${alert.severity}">
+                            ${alert.severity.toUpperCase()}
+                        </div>
+                    </div>
+                `).join('');
+                
+                container.innerHTML = html;
+            } catch (error) {
+                console.error('加载告警列表失败:', error);
+                document.getElementById('alertsList').innerHTML = 
+                    '<div class="error">❌ 加载告警数据失败，请检查服务状态</div>';
+            }
+        }
+        
+        // 发送测试告警
+        async function sendTestAlert() {
+            const testAlert = {
+                title: 'MVP测试告警',
+                description: '这是一个从前端发送的测试告警，用于验证系统功能正常',
+                severity: 'medium',
+                source: 'mvp-frontend',
+                host: 'localhost',
+                service: 'web-ui',
+                environment: 'test',
+                tags: {
+                    test: 'true',
+                    frontend: 'true',
+                    mvp: 'true'
+                }
+            };
+            
+            try {
+                const response = await fetch('/api/webhook/alarm/demo-token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(testAlert)
+                });
+                
+                if (response.ok) {
+                    alert('✅ 测试告警发送成功！');
+                    // 延迟刷新数据
+                    setTimeout(refreshData, 1000);
+                } else {
+                    alert('❌ 测试告警发送失败');
+                }
+            } catch (error) {
+                console.error('发送测试告警失败:', error);
+                alert('❌ 发送测试告警时出现错误');
+            }
+        }
+        
+        // 刷新所有数据
+        function refreshData() {
+            loadStats();
+            loadAlerts();
+        }
+        
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshData();
+            
+            // 定时刷新数据
+            setInterval(refreshData, 30000); // 30秒刷新一次
+        });
+    </script>
+</body>
+</html>

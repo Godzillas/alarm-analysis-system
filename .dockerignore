@@ -1,0 +1,57 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+venv
+.venv
+pip-log.txt
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Dependencies
+node_modules/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Documentation
+docs/
+README.md
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Frontend
+frontend/
+static/dist/
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov/
+
+# Docker
+docker-compose.override.yml

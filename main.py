@@ -194,6 +194,11 @@ async def root():
     if os.path.exists(vue_index_path):
         return FileResponse(vue_index_path)
     
+    # 检查是否有MVP页面
+    mvp_path = "static/mvp.html"
+    if os.path.exists(mvp_path):
+        return FileResponse(mvp_path)
+    
     # 回退到简单的HTML页面
     return """
     <!DOCTYPE html>
@@ -230,17 +235,33 @@ async def root():
     """
 
 
+@app.get("/mvp", response_class=HTMLResponse)
+async def mvp_dashboard():
+    """MVP演示页面"""
+    mvp_path = "static/mvp.html"
+    if os.path.exists(mvp_path):
+        return FileResponse(mvp_path)
+    else:
+        raise HTTPException(status_code=404, detail="MVP页面未找到")
+
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_panel():
     """现代化管理后台界面"""
-    with open("templates/modern-admin.html", "r", encoding="utf-8") as f:
-        return f.read()
+    try:
+        with open("templates/modern-admin.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        # 如果找不到管理页面，跳转到MVP页面
+        return FileResponse("static/mvp.html") if os.path.exists("static/mvp.html") else HTMLResponse("管理页面开发中...")
 
 @app.get("/admin/classic", response_class=HTMLResponse)
 async def classic_admin_panel():
     """经典管理后台界面"""
-    with open("templates/admin.html", "r", encoding="utf-8") as f:
-        return f.read()
+    try:
+        with open("templates/admin.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return FileResponse("static/mvp.html") if os.path.exists("static/mvp.html") else HTMLResponse("管理页面开发中...")
 
 
 if __name__ == "__main__":
