@@ -11,9 +11,23 @@ from src.models.alarm import Base
 
 if settings.DATABASE_URL.startswith("sqlite"):
     async_database_url = settings.DATABASE_URL.replace("sqlite:///", "sqlite+aiosqlite:///")
-    engine = create_async_engine(async_database_url, echo=settings.DEBUG)
+    engine = create_async_engine(
+        async_database_url, 
+        echo=settings.DEBUG,
+        pool_size=settings.DATABASE_POOL_SIZE,
+        max_overflow=settings.DATABASE_MAX_OVERFLOW,
+        pool_timeout=settings.DATABASE_POOL_TIMEOUT,
+        pool_recycle=settings.DATABASE_POOL_RECYCLE
+    )
 else:
-    engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG)
+    engine = create_async_engine(
+        settings.DATABASE_URL, 
+        echo=settings.DEBUG,
+        pool_size=settings.DATABASE_POOL_SIZE,
+        max_overflow=settings.DATABASE_MAX_OVERFLOW,
+        pool_timeout=settings.DATABASE_POOL_TIMEOUT,
+        pool_recycle=settings.DATABASE_POOL_RECYCLE
+    )
 
 async_session_maker = async_sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False

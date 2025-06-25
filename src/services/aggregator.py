@@ -7,7 +7,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
-from sqlalchemy import select, func, and_, or_, desc, asc
+from sqlalchemy import select, func, and_, or_, desc, asc, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from collections import defaultdict, Counter
 
@@ -173,11 +173,11 @@ class AlarmAggregator:
                 )
                 user_stats = [{"username": row.username, "count": row.count} for row in user_result.all()]
                 
-                # 通知发送统计
+                # 通知发送统计 - 使用case语句替代filter (MySQL兼容)
                 notification_result = await session.execute(
                     select(
-                        func.count(AlarmDistribution.id).filter(AlarmDistribution.notification_sent == True).label('sent'),
-                        func.count(AlarmDistribution.id).filter(AlarmDistribution.notification_sent == False).label('pending')
+                        func.sum(case((AlarmDistribution.notification_sent == True, 1), else_=0)).label('sent'),
+                        func.sum(case((AlarmDistribution.notification_sent == False, 1), else_=0)).label('pending')
                     ).where(
                         AlarmDistribution.created_at >= start_time
                     )

@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from src.models.alarm import ContactPoint, ContactPointType, System
 from src.utils.logger import get_logger
-from src.core.database import get_db_session
+from src.core.database import async_session_maker
 
 
 class ContactPointManager:
@@ -46,7 +46,7 @@ class ContactPointManager:
         **kwargs
     ) -> ContactPoint:
         """创建联络点"""
-        async with get_db_session() as db:
+        async with async_session_maker() as db:
             try:
                 # 检查名称是否已存在
                 existing = await db.execute(
@@ -86,7 +86,7 @@ class ContactPointManager:
         **update_data
     ) -> ContactPoint:
         """更新联络点"""
-        async with get_db_session() as db:
+        async with async_session_maker() as db:
             try:
                 contact_point = await db.get(ContactPoint, contact_point_id)
                 if not contact_point:
@@ -116,7 +116,7 @@ class ContactPointManager:
     
     async def delete_contact_point(self, contact_point_id: int) -> bool:
         """删除联络点"""
-        async with get_db_session() as db:
+        async with async_session_maker() as db:
             try:
                 contact_point = await db.get(ContactPoint, contact_point_id)
                 if not contact_point:
@@ -145,7 +145,7 @@ class ContactPointManager:
         limit: int = 100
     ) -> List[ContactPoint]:
         """获取联络点列表"""
-        async with get_db_session() as db:
+        async with async_session_maker() as db:
             try:
                 query = select(ContactPoint).options(selectinload(ContactPoint.system))
                 
@@ -172,7 +172,7 @@ class ContactPointManager:
     
     async def get_contact_point_by_id(self, contact_point_id: int) -> Optional[ContactPoint]:
         """根据ID获取联络点"""
-        async with get_db_session() as db:
+        async with async_session_maker() as db:
             try:
                 query = select(ContactPoint).options(selectinload(ContactPoint.system))
                 query = query.where(ContactPoint.id == contact_point_id)
@@ -285,7 +285,7 @@ class ContactPointManager:
     
     async def _update_contact_point_stats(self, contact_point_id: int, success: bool):
         """更新联络点统计信息"""
-        async with get_db_session() as db:
+        async with async_session_maker() as db:
             try:
                 contact_point = await db.get(ContactPoint, contact_point_id)
                 if not contact_point:

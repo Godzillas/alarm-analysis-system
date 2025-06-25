@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from contextlib import asynccontextmanager
 import os
+from src.core.logging import setup_logging, get_logger
 
 # 全局服务实例
 _global_collector = None
@@ -36,29 +37,53 @@ from src.services.scheduler import start_scheduler
 async def lifespan(app: FastAPI):
     global _global_collector, _global_analyzer
     
-    await init_db()
+    # 设置日志
+    setup_logging()
+    logger = get_logger(__name__)
+    logger.info("🚀 启动告警分析系统...")
     
-    collector = AlarmCollector()
-    analyzer = AlarmAnalyzer()
-    
-    await collector.start()
-    await analyzer.start()
-    
-    # 保存全局引用
-    _global_collector = collector
-    _global_analyzer = analyzer
-    
-    start_scheduler()
-    
-    # 启动WebSocket实时更新器
-    from src.services.websocket_manager import real_time_updater
-    await real_time_updater.start()
-    
-    yield
-    
-    await collector.stop()
-    await analyzer.stop()
-    await real_time_updater.stop()
+    try:
+        await init_db()
+        logger.info("✅ 数据库初始化完成")
+        
+        collector = AlarmCollector()
+        analyzer = AlarmAnalyzer()
+        
+        await collector.start()
+        await analyzer.start()
+        logger.info("✅ 告警收集器和分析器启动完成")
+        
+        # 保存全局引用
+        _global_collector = collector
+        _global_analyzer = analyzer
+        
+        start_scheduler()
+        logger.info("✅ 调度器启动完成")
+        
+        # 启动WebSocket实时更新器
+        from src.services.websocket_manager import real_time_updater
+        await real_time_updater.start()
+        logger.info("✅ WebSocket实时更新器启动完成")
+        
+        logger.info("🎉 告警分析系统启动成功")
+        
+        yield
+        
+    except Exception as e:
+        logger.error(f"❌ 系统启动失败: {str(e)}")
+        raise
+    finally:
+        logger.info("🔄 正在关闭告警分析系统...")
+        
+        if _global_collector:
+            await _global_collector.stop()
+        if _global_analyzer:
+            await _global_analyzer.stop()
+        
+        from src.services.websocket_manager import real_time_updater
+        await real_time_updater.stop()
+        
+        logger.info("👋 告警分析系统已关闭")
 
 
 def get_global_collector():

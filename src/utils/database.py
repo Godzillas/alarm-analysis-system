@@ -14,31 +14,47 @@ def get_date_trunc_func(engine, column, interval: str):
     Args:
         engine: 数据库引擎
         column: 要截断的日期列
-        interval: 时间间隔 ('1h' 表示小时, '1d' 表示天)
+        interval: 时间间隔 ('1h' 表示小时, '1d' 表示天, '1min' 表示分钟)
     
     Returns:
         SQLAlchemy 函数表达式
     """
+    from src.core.config import settings
+    
     # 获取数据库方言名称
     if hasattr(engine, 'dialect'):
         dialect_name = engine.dialect.name
     elif hasattr(engine, 'engine'):
         dialect_name = engine.engine.dialect.name
     else:
-        # 默认假设是异步引擎，通过URL判断
-        dialect_name = 'sqlite'  # 默认值
+        # 通过URL判断数据库类型
+        dialect_name = get_database_type_from_url(settings.DATABASE_URL)
         
     if dialect_name == 'mysql':
-        # MySQL 8.0 使用 DATE_FORMAT
-        if interval == "1h":
+        # MySQL 使用 DATE_FORMAT
+        if interval == "1min":
+            return func.date_format(column, '%Y-%m-%d %H:%i:00')
+        elif interval == "1h":
             return func.date_format(column, '%Y-%m-%d %H:00:00')
         elif interval == "1d":
             return func.date_format(column, '%Y-%m-%d 00:00:00')
         else:
             return func.date_format(column, '%Y-%m-%d %H:00:00')
+    elif dialect_name == 'postgresql':
+        # PostgreSQL 使用 date_trunc
+        if interval == "1min":
+            return func.date_trunc('minute', column)
+        elif interval == "1h":
+            return func.date_trunc('hour', column)
+        elif interval == "1d":
+            return func.date_trunc('day', column)
+        else:
+            return func.date_trunc('hour', column)
     else:
         # SQLite 使用 strftime
-        if interval == "1h":
+        if interval == "1min":
+            return func.strftime('%Y-%m-%d %H:%M:00', column)
+        elif interval == "1h":
             return func.strftime('%Y-%m-%d %H:00:00', column)
         elif interval == "1d":
             return func.strftime('%Y-%m-%d 00:00:00', column)
