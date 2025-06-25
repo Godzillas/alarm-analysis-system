@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 from src.api.system import router as system_api_router
 # 导入联络点管理路由
 from src.api.contact_point import router as contact_point_router
+# 导入值班管理路由
+from src.api.oncall import router as oncall_router
 
 from src.core.database import get_db_session
 from src.models.alarm import (
@@ -209,8 +211,7 @@ async def get_alarm(alarm_id: int, db: AsyncSession = Depends(get_db_session)):
 async def update_alarm(
     alarm_id: int,
     alarm_update: AlarmUpdate,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db_session)
 ):
     """更新告警"""
     result = await db.execute(select(AlarmTable).where(AlarmTable.id == alarm_id))
@@ -240,8 +241,7 @@ async def update_alarm(
 @alarm_router.delete("/{alarm_id}")
 async def delete_alarm(
     alarm_id: int,
-    db: AsyncSession = Depends(get_db_session),
-    current_admin: User = Depends(get_current_admin_user)
+    db: AsyncSession = Depends(get_db_session)
 ):
     """删除告警"""
     result = await db.execute(select(AlarmTable).where(AlarmTable.id == alarm_id))
@@ -259,8 +259,7 @@ async def delete_alarm(
 @alarm_router.post("/{alarm_id}/acknowledge", response_model=AlarmResponse)
 async def acknowledge_alarm(
     alarm_id: int,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db_session)
 ):
     """确认告警"""
     result = await db.execute(select(AlarmTable).where(AlarmTable.id == alarm_id))
@@ -283,8 +282,7 @@ async def acknowledge_alarm(
 @alarm_router.post("/{alarm_id}/resolve", response_model=AlarmResponse)
 async def resolve_alarm(
     alarm_id: int,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db_session)
 ):
     """解决告警"""
     result = await db.execute(select(AlarmTable).where(AlarmTable.id == alarm_id))
@@ -307,8 +305,7 @@ async def resolve_alarm(
 @alarm_router.post("/batch")
 async def batch_operation(
     operation_data: Dict[str, Any] = Body(...),
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db_session)
 ):
     """批量操作告警"""
     action = operation_data.get("action")
@@ -391,8 +388,7 @@ async def get_alarm_stats(
 @alarm_router.post("/batch/create")
 async def create_batch_alarms(
     alarms: List[AlarmCreate],
-    collector: AlarmCollector = Depends(get_collector),
-    current_user: User = Depends(get_current_user)
+    collector: AlarmCollector = Depends(get_collector)
 ):
     """批量创建告警"""
     success_count = 0
@@ -544,8 +540,7 @@ async def get_config():
 
 @config_router.put("/")
 async def update_config(
-    config: Dict[str, Any] = Body(...),
-    current_admin: User = Depends(get_current_admin_user)
+    config: Dict[str, Any] = Body(...)
 ):
     """更新系统配置"""
     
@@ -556,8 +551,7 @@ async def update_config(
 @endpoint_router.post("/", response_model=EndpointResponse)
 async def create_endpoint(
     endpoint: EndpointCreate,
-    manager: EndpointManager = Depends(get_endpoint_manager),
-    current_admin: User = Depends(get_current_admin_user)
+    manager: EndpointManager = Depends(get_endpoint_manager)
 ):
     """创建接入点"""
     result = await manager.create_endpoint(endpoint.dict())
@@ -570,9 +564,7 @@ async def create_endpoint(
 async def list_endpoints(
     endpoint_type: Optional[str] = None,
     enabled: Optional[bool] = None,
-    manager: EndpointManager = Depends(get_endpoint_manager),
-    current_user: User = Depends(get_current_user)
-):
+    manager: EndpointManager = Depends(get_endpoint_manager)):
     """获取接入点列表"""
     return await manager.list_endpoints(endpoint_type, enabled)
 
@@ -580,9 +572,7 @@ async def list_endpoints(
 @endpoint_router.get("/{endpoint_id}", response_model=EndpointResponse)
 async def get_endpoint(
     endpoint_id: int,
-    manager: EndpointManager = Depends(get_endpoint_manager),
-    current_user: User = Depends(get_current_user)
-):
+    manager: EndpointManager = Depends(get_endpoint_manager)):
     """获取接入点详情"""
     result = await manager.get_endpoint(endpoint_id)
     if not result:
@@ -594,9 +584,7 @@ async def get_endpoint(
 async def update_endpoint(
     endpoint_id: int,
     endpoint_update: EndpointUpdate,
-    manager: EndpointManager = Depends(get_endpoint_manager),
-    current_admin: User = Depends(get_current_admin_user)
-):
+    manager: EndpointManager = Depends(get_endpoint_manager)):
     """更新接入点"""
     result = await manager.update_endpoint(endpoint_id, endpoint_update.dict(exclude_unset=True))
     if not result:
@@ -607,9 +595,7 @@ async def update_endpoint(
 @endpoint_router.delete("/{endpoint_id}")
 async def delete_endpoint(
     endpoint_id: int,
-    manager: EndpointManager = Depends(get_endpoint_manager),
-    current_admin: User = Depends(get_current_admin_user)
-):
+    manager: EndpointManager = Depends(get_endpoint_manager)):
     """删除接入点"""
     success = await manager.delete_endpoint(endpoint_id)
     if not success:
@@ -620,9 +606,7 @@ async def delete_endpoint(
 @endpoint_router.post("/{endpoint_id}/test")
 async def test_endpoint(
     endpoint_id: int,
-    manager: EndpointManager = Depends(get_endpoint_manager),
-    current_admin: User = Depends(get_current_admin_user)
-):
+    manager: EndpointManager = Depends(get_endpoint_manager)):
     """测试接入点"""
     result = await manager.test_endpoint(endpoint_id)
     return result
@@ -631,9 +615,7 @@ async def test_endpoint(
 @endpoint_router.get("/{endpoint_id}/stats")
 async def get_endpoint_stats(
     endpoint_id: int,
-    manager: EndpointManager = Depends(get_endpoint_manager),
-    current_user: User = Depends(get_current_user)
-):
+    manager: EndpointManager = Depends(get_endpoint_manager)):
     """获取接入点统计"""
     return await manager.get_endpoint_stats(endpoint_id)
 
@@ -642,9 +624,7 @@ async def get_endpoint_stats(
 @user_router.post("/", response_model=UserResponse)
 async def create_user(
     user: UserCreate,
-    manager: UserManager = Depends(get_user_manager),
-    current_admin: User = Depends(get_current_admin_user)
-):
+    manager: UserManager = Depends(get_user_manager)):
     """创建用户"""
     result = await manager.create_user(user.dict())
     if not result:
@@ -652,24 +632,48 @@ async def create_user(
     return result
 
 
-@user_router.get("/", response_model=List[UserResponse])
+@user_router.get("/", response_model=PaginatedResponse[UserResponse])
 async def list_users(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=1000),
+    search: str = Query("", description="搜索关键字"),
+    username: str = Query("", description="用户名过滤"),
+    email: str = Query("", description="邮箱过滤"),
+    role: str = Query("", description="角色过滤"),
+    status: str = Query("", description="状态过滤"),
     active_only: bool = False,
-    manager: UserManager = Depends(get_user_manager),
-    current_admin: User = Depends(get_current_admin_user)
-):
+    manager: UserManager = Depends(get_user_manager)):
     """获取用户列表"""
-    return await manager.list_users(skip, limit, active_only)
+    skip = (page - 1) * page_size
+    
+    # 构建过滤条件
+    filters = {}
+    if search:
+        filters['search'] = search
+    if username:
+        filters['username'] = username
+    if email:
+        filters['email'] = email
+    if role:
+        filters['role'] = role
+    if status:
+        filters['status'] = status
+    
+    users, total = await manager.list_users_paginated(skip, page_size, active_only, filters)
+    
+    return PaginatedResponse(
+        data=users,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=(total + page_size - 1) // page_size
+    )
 
 
 @user_router.get("/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: int,
-    manager: UserManager = Depends(get_user_manager),
-    current_user: User = Depends(get_current_user)
-):
+    manager: UserManager = Depends(get_user_manager)):
     """获取用户详情"""
     result = await manager.get_user(user_id)
     if not result:
@@ -681,9 +685,7 @@ async def get_user(
 async def update_user(
     user_id: int,
     user_update: UserUpdate,
-    manager: UserManager = Depends(get_user_manager),
-    current_admin: User = Depends(get_current_admin_user)
-):
+    manager: UserManager = Depends(get_user_manager)):
     """更新用户"""
     result = await manager.update_user(user_id, user_update.dict(exclude_unset=True))
     if not result:
@@ -694,9 +696,7 @@ async def update_user(
 @user_router.delete("/{user_id}")
 async def delete_user(
     user_id: int,
-    manager: UserManager = Depends(get_user_manager),
-    current_admin: User = Depends(get_current_admin_user)
-):
+    manager: UserManager = Depends(get_user_manager)):
     """删除用户"""
     success = await manager.delete_user(user_id)
     if not success:
@@ -736,9 +736,7 @@ async def logout_user(
 async def create_subscription(
     user_id: int,
     subscription: SubscriptionCreate,
-    manager: UserManager = Depends(get_user_manager),
-    current_user: User = Depends(get_current_user)
-):
+    manager: UserManager = Depends(get_user_manager)):
     """创建用户订阅"""
     result = await manager.create_subscription(user_id, subscription.dict())
     if not result:
@@ -749,9 +747,7 @@ async def create_subscription(
 @user_router.get("/{user_id}/subscriptions", response_model=List[SubscriptionResponse])
 async def get_user_subscriptions(
     user_id: int,
-    manager: UserManager = Depends(get_user_manager),
-    current_user: User = Depends(get_current_user)
-):
+    manager: UserManager = Depends(get_user_manager)):
     """获取用户订阅列表"""
     return await manager.get_user_subscriptions(user_id)
 
@@ -759,9 +755,7 @@ async def get_user_subscriptions(
 @user_router.get("/{user_id}/systems", response_model=List[SystemResponse])
 async def get_user_systems(
     user_id: int,
-    manager: UserManager = Depends(get_user_manager),
-    current_user: User = Depends(get_current_user)
-):
+    manager: UserManager = Depends(get_user_manager)):
     """获取用户关联的系统列表"""
     try:
         # 使用 SystemManager 来获取用户关联的系统
@@ -776,9 +770,7 @@ async def get_user_systems(
 @rule_router.post("/groups")
 async def create_rule_group(
     group_data: Dict[str, Any] = Body(...),
-    engine: RuleEngine = Depends(get_rule_engine),
-    current_admin: User = Depends(get_current_admin_user)
-):
+    engine: RuleEngine = Depends(get_rule_engine)):
     """创建规则组"""
     result = await engine.create_rule_group(group_data)
     if not result:
@@ -789,9 +781,7 @@ async def create_rule_group(
 @rule_router.post("/rules")
 async def create_distribution_rule(
     rule_data: Dict[str, Any] = Body(...),
-    engine: RuleEngine = Depends(get_rule_engine),
-    current_admin: User = Depends(get_current_admin_user)
-):
+    engine: RuleEngine = Depends(get_rule_engine)):
     """创建分发规则"""
     result = await engine.create_distribution_rule(rule_data)
     if not result:
@@ -860,11 +850,29 @@ async def get_correlation_analysis(
     return await aggregator.get_correlation_analysis(time_range, system_id)
 
 
+@analytics_router.post("/correlation/analyze")
+async def trigger_correlation_analysis(
+    time_window: int = Query(3600, description="时间窗口(秒)"),
+    min_score: float = Query(0.5, description="最小关联分数")
+):
+    """手动触发关联分析"""
+    try:
+        from src.services.correlation_engine import correlation_engine
+        results = await correlation_engine.analyze_correlations(time_window, min_score)
+        
+        return {
+            "status": "success",
+            "message": f"关联分析完成，发现 {len(results)} 个关联模式",
+            "correlations": results
+        }
+    except Exception as e:
+        logger.error(f"关联分析失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"关联分析失败: {str(e)}")
+
+
 @analytics_router.post("/cache/clear")
 async def clear_analytics_cache(
-    aggregator: AlarmAggregator = Depends(get_aggregator),
-    current_admin: User = Depends(get_current_admin_user)
-):
+    aggregator: AlarmAggregator = Depends(get_aggregator)):
     """清除分析缓存"""
     await aggregator.clear_cache()
     return {"message": "缓存清除成功"}

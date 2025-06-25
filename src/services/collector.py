@@ -94,6 +94,13 @@ class AlarmCollector:
                 environment=alarm_data.get("environment"),
                 timestamp=alarm_data.get("timestamp")
             )
+            
+            # 触发关联分析
+            await self._trigger_correlation_analysis(alarm_event)
+            
+            # 触发升级检查
+            await self._trigger_escalation_check(alarm_event)
+            
             return await self.collect_alarm(alarm_event)
         except Exception as e:
             logger.error(f"解析告警数据失败: {e}")
@@ -220,6 +227,10 @@ class AlarmCollector:
                             last_occurrence=alarm_event.timestamp or datetime.utcnow()
                         )
                         session.add(new_alarm)
+                        await session.flush()  # 确保新告警有ID
+                        
+                        # 为新告警触发升级检查
+                        await self._trigger_escalation_for_alarm(new_alarm.id)
                         
                     saved_count += 1
                     
@@ -246,6 +257,35 @@ class AlarmCollector:
             logger.error(f"查找相似告警失败: {e}")
             return None
             
+    async def _trigger_correlation_analysis(self, alarm_event: AlarmEvent):
+        """触发关联分析"""
+        try:
+            from src.services.correlation_engine import correlation_engine
+            # 异步启动关联分析，不阻塞告警收集
+            asyncio.create_task(correlation_engine.analyze_correlations())
+        except Exception as e:
+            logger.error(f"触发关联分析失败: {e}")
+    
+    async def _trigger_escalation_check(self, alarm_event: AlarmEvent):
+        """触发升级检查"""
+        try:
+            # 对于高严重级别的告警，检查是否需要立即升级
+            if alarm_event.severity in ['critical', 'high']:
+                from src.services.escalation_engine import escalation_engine
+                # 这里可以添加自动升级逻辑
+                logger.info(f"高严重级别告警: {alarm_event.title}, 可能需要升级")
+        except Exception as e:
+            logger.error(f"触发升级检查失败: {e}")
+    
+    async def _trigger_escalation_for_alarm(self, alarm_id: int):
+        """为特定告警触发升级"""
+        try:
+            from src.services.escalation_engine import escalation_engine
+            # 异步触发升级，不阻塞告警保存
+            asyncio.create_task(escalation_engine.trigger_escalation(alarm_id))
+        except Exception as e:
+            logger.error(f"为告警 {alarm_id} 触发升级失败: {e}")
+    
     async def get_stats(self) -> Dict[str, Any]:
         return {
             "buffer_size": len(self.buffer),

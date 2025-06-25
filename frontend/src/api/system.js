@@ -7,6 +7,22 @@ export default {
       url: '/systems/',
       method: 'get',
       params
+    }).then(response => {
+      // 确保返回格式正确
+      if (response && response.data) {
+        return response;
+      }
+      // 如果后端直接返回数组，包装成分页格式
+      if (Array.isArray(response)) {
+        return {
+          data: response,
+          total: response.length,
+          page: 1,
+          page_size: response.length,
+          pages: 1
+        };
+      }
+      return response;
     })
   },
 

@@ -42,12 +42,27 @@ export const useSystemStore = defineStore('system', {
           ...params
         })
         
-        this.systems = response.data
-        this.pagination.total = response.total
+        // 确保响应格式正确
+        if (response && response.data) {
+          this.systems = response.data
+          this.pagination.total = response.total || 0
+          this.pagination.page = response.page || 1
+          this.pagination.pageSize = response.page_size || 20
+        } else if (Array.isArray(response)) {
+          // 兼容直接返回数组的情况
+          this.systems = response
+          this.pagination.total = response.length
+        } else {
+          console.warn('Unexpected response format:', response)
+          this.systems = []
+          this.pagination.total = 0
+        }
         
         return response
       } catch (error) {
-        this.error = error.message
+        this.error = error.message || '获取系统列表失败'
+        this.systems = []
+        this.pagination.total = 0
         throw error
       } finally {
         this.loading = false
@@ -200,6 +215,37 @@ export const useSystemStore = defineStore('system', {
 
     clearError() {
       this.error = null
+    },
+
+    async fetchAllSystems(enabledOnly = true) {
+      this.loading = true
+      this.error = null
+      
+      try {
+        const response = await systemApi.getSystems({
+          page: 1,
+          page_size: 1000,
+          enabled: enabledOnly
+        })
+        
+        if (response && response.data) {
+          this.systems = response.data
+          return response.data
+        } else if (Array.isArray(response)) {
+          this.systems = response
+          return response
+        } else {
+          console.warn('Unexpected response format:', response)
+          this.systems = []
+          return []
+        }
+      } catch (error) {
+        this.error = error.message || '获取系统列表失败'
+        this.systems = []
+        throw error
+      } finally {
+        this.loading = false
+      }
     }
   }
 })

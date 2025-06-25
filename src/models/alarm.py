@@ -473,13 +473,41 @@ class UserResponse(BaseModel):
     username: str
     email: str
     full_name: Optional[str]
+    display_name: Optional[str] = None
     is_active: bool
     is_admin: bool
+    role: str = "viewer"
+    status: str = "active"
     created_at: datetime
-    last_login: Optional[datetime]
+    updated_at: Optional[datetime] = None
+    last_login: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
+    subscription_count: int = 0
+    system_count: int = 0
     
     class Config:
         from_attributes = True
+        
+    def __init__(self, **data):
+        # 映射字段
+        if 'full_name' in data and data['full_name']:
+            data['display_name'] = data['full_name']
+        elif 'display_name' not in data:
+            data['display_name'] = data.get('username', '')
+            
+        # 映射角色
+        if 'is_admin' in data:
+            data['role'] = 'admin' if data['is_admin'] else 'viewer'
+            
+        # 映射状态
+        if 'is_active' in data:
+            data['status'] = 'active' if data['is_active'] else 'disabled'
+            
+        # 映射最后登录时间
+        if 'last_login' in data and data['last_login']:
+            data['last_login_at'] = data['last_login']
+            
+        super().__init__(**data)
 
 
 class SystemCreate(BaseModel):

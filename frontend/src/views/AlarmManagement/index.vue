@@ -14,7 +14,15 @@
       <div class="filters">
         <el-form :model="filters" inline>
           <el-form-item label="所属系统">
-            <el-select v-model="filters.system_id" placeholder="全部系统" clearable filterable>
+            <el-select 
+              v-model="filters.system_id" 
+              placeholder="全部系统" 
+              clearable 
+              filterable
+              :loading="systemStore.loading"
+              loading-text="加载系统列表中..."
+              no-data-text="暂无可用系统"
+            >
               <el-option
                 v-for="system in availableSystems"
                 :key="system.id"
@@ -52,6 +60,15 @@
           <el-form-item>
             <el-button type="primary" @click="handleSearch">搜索</el-button>
             <el-button @click="handleReset">重置</el-button>
+            <el-button 
+              v-if="systemStore.error" 
+              type="warning" 
+              @click="loadAvailableSystems"
+              :loading="systemStore.loading"
+              size="small"
+            >
+              重新加载系统
+            </el-button>
           </el-form-item>
         </el-form>
       </div>
@@ -353,8 +370,11 @@ const handleReset = () => {
   alarmStore.fetchAlarms()
 }
 
-const refreshData = () => {
-  alarmStore.fetchAlarms()
+const refreshData = async () => {
+  await Promise.all([
+    alarmStore.fetchAlarms(),
+    loadAvailableSystems()
+  ])
 }
 
 const handleSizeChange = (val) => {
@@ -422,11 +442,22 @@ const handleResolve = async (alarm) => {
 // 加载可用系统列表
 const loadAvailableSystems = async () => {
   try {
-    await systemStore.fetchSystems({ page: 1, page_size: 1000 })
-    availableSystems.value = systemStore.systems.filter(system => system.enabled)
+    const systems = await systemStore.fetchAllSystems(true)
+    availableSystems.value = systems.filter(system => system.enabled)
+    
+    // 如果没有加载到系统，显示友好提示
+    if (availableSystems.value.length === 0) {
+      console.warn('未找到可用的系统，请先创建系统')
+      ElMessage.info('未找到可用系统，请先在系统管理页面创建系统')
+    } else {
+      console.log(`成功加载 ${availableSystems.value.length} 个可用系统`)
+    }
   } catch (error) {
     console.error('加载系统列表失败:', error)
     ElMessage.warning('加载系统列表失败，下拉选择可能无法正常工作')
+    
+    // 设置空数组避免组件报错
+    availableSystems.value = []
   }
 }
 

@@ -326,10 +326,12 @@ const handleDialogSuccess = () => {
 // 加载可用系统列表
 const loadAvailableSystems = async () => {
   try {
-    await systemStore.fetchSystems({ page: 1, page_size: 1000 })
-    availableSystems.value = systemStore.systems.filter(system => system.enabled)
+    const systems = await systemStore.fetchAllSystems(true)
+    availableSystems.value = systems.filter(system => system.enabled)
   } catch (error) {
     console.error('加载系统列表失败:', error)
+    ElMessage.warning('加载系统列表失败')
+    availableSystems.value = []
   }
 }
 

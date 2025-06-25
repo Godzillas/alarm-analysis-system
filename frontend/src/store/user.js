@@ -57,6 +57,11 @@ export const useUserStore = defineStore('user', {
       try {
         const response = await userApi.createUser(userData)
         
+        // 确保users数组已初始化
+        if (!Array.isArray(this.users)) {
+          this.users = []
+        }
+        
         if (this.pagination.page === 1) {
           this.users.unshift(response)
         }
@@ -73,6 +78,11 @@ export const useUserStore = defineStore('user', {
     async updateUser(id, userData) {
       try {
         const response = await userApi.updateUser(id, userData)
+        
+        // 确保users数组已初始化
+        if (!Array.isArray(this.users)) {
+          this.users = []
+        }
         
         const index = this.users.findIndex(u => u.id === id)
         if (index !== -1) {
@@ -93,6 +103,11 @@ export const useUserStore = defineStore('user', {
     async deleteUser(id) {
       try {
         await userApi.deleteUser(id)
+        
+        // 确保users数组已初始化
+        if (!Array.isArray(this.users)) {
+          this.users = []
+        }
         
         const index = this.users.findIndex(u => u.id === id)
         if (index !== -1) {

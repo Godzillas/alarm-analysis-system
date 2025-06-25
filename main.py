@@ -25,6 +25,7 @@ from src.api.routers import (
 from src.api.system import router as system_router
 from src.api.contact_point import router as contact_point_router
 from src.api.alert_template import router as alert_template_router
+from src.api.oncall import router as oncall_router
 from src.api.auth import router as auth_router
 from src.core.config import settings
 from src.core.database import init_db
@@ -65,6 +66,11 @@ async def lifespan(app: FastAPI):
         await real_time_updater.start()
         logger.info("✅ WebSocket实时更新器启动完成")
         
+        # 启动升级引擎
+        from src.services.escalation_engine import escalation_engine
+        await escalation_engine.start()
+        logger.info("✅ 告警升级引擎启动完成")
+        
         logger.info("🎉 告警分析系统启动成功")
         
         yield
@@ -82,6 +88,9 @@ async def lifespan(app: FastAPI):
         
         from src.services.websocket_manager import real_time_updater
         await real_time_updater.stop()
+        
+        from src.services.escalation_engine import escalation_engine
+        await escalation_engine.stop()
         
         logger.info("👋 告警分析系统已关闭")
 
@@ -124,6 +133,7 @@ app.include_router(analytics_router, prefix="/api/analytics", tags=["分析统�
 app.include_router(system_router, prefix="/api/systems", tags=["系统管理"])
 app.include_router(contact_point_router, prefix="/api/contact-points", tags=["联络点管理"])
 app.include_router(alert_template_router, prefix="/api/alert-templates", tags=["告警模板管理"])
+app.include_router(oncall_router, tags=["值班管理"])
 app.include_router(websocket_router, prefix="/ws", tags=["WebSocket"])
 app.include_router(webhook_router, prefix="/api/webhook", tags=["Webhook接收"])
 

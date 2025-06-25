@@ -479,49 +479,58 @@ const saveUser = async () => {
   try {
     await formRef.value.validate()
     
+    // 准备提交的数据
+    const submitData = {
+      username: userForm.username,
+      email: userForm.email,
+      full_name: userForm.display_name, // 字段映射
+      is_admin: userForm.role === 'admin', // 字段映射
+      is_active: userForm.status === 'active' // 字段映射
+    }
+    
+    // 如果是新建用户，需要包含密码
+    if (!isEdit.value) {
+      // 验证密码确认
+      if (userForm.password !== userForm.confirmPassword) {
+        ElMessage.error('两次输入的密码不一致')
+        return
+      }
+      submitData.password = userForm.password
+    }
+    
     if (isEdit.value) {
       // 更新用户
-      const index = users.value.findIndex(u => u.id === userForm.id)
-      if (index > -1) {
-        Object.assign(users.value[index], {
-          ...userForm,
-          updated_at: new Date().toISOString()
-        })
-      }
-      console.log('更新用户:', userForm)
+      await userStore.updateUser(userForm.id, submitData)
       ElMessage.success('用户更新成功')
     } else {
       // 创建用户
-      const newUser = {
-        ...userForm,
-        id: Date.now(),
-        created_at: new Date().toISOString(),
-        last_login_at: null,
-        subscription_count: 0
-      }
-      delete newUser.password
-      delete newUser.confirmPassword
-      
-      users.value.unshift(newUser)
-      pagination.total += 1
-      
-      console.log('创建用户:', newUser)
+      await userStore.createUser(submitData)
       ElMessage.success('用户创建成功')
     }
     
     dialogVisible.value = false
+    
+    // 刷新用户列表
+    await loadUsers()
+    
   } catch (error) {
     console.error('保存用户失败:', error)
+    ElMessage.error('保存用户失败: ' + (error.message || '未知错误'))
   }
 }
 
 // 切换用户状态
 const toggleUserStatus = async (user) => {
   try {
-    console.log('切换用户状态:', user.id, user.status)
+    const updateData = {
+      is_active: user.status === 'active'
+    }
+    
+    await userStore.updateUser(user.id, updateData)
     ElMessage.success(`用户已${user.status === 'active' ? '激活' : '禁用'}`)
   } catch (error) {
     console.error('切换用户状态失败:', error)
+    ElMessage.error('操作失败')
     // 回滚状态
     user.status = user.status === 'active' ? 'disabled' : 'active'
   }
@@ -613,8 +622,7 @@ const loadUserSystems = async () => {
 const showAddSystemDialog = async () => {
   try {
     // 获取所有系统
-    await systemStore.fetchSystems({ page: 1, page_size: 1000 })
-    const allSystems = systemStore.systems
+    const allSystems = await systemStore.fetchAllSystems(false)
     
     // 排除已关联的系统
     const userSystemIds = userSystems.value.map(s => s.id)
@@ -624,6 +632,7 @@ const showAddSystemDialog = async () => {
   } catch (error) {
     console.error('加载可用系统失败:', error)
     ElMessage.error('加载可用系统失败')
+    availableSystems.value = []
   }
 }
 
@@ -712,17 +721,15 @@ const deleteUser = async (user) => {
       type: 'warning'
     })
     
-    const index = users.value.findIndex(u => u.id === user.id)
-    if (index > -1) {
-      users.value.splice(index, 1)
-      pagination.total -= 1
-    }
-    
-    console.log('删除用户:', user.id)
+    await userStore.deleteUser(user.id)
     ElMessage.success('用户删除成功')
+    
+    // 刷新列表
+    await loadUsers()
   } catch (error) {
     if (error !== 'cancel') {
       console.error('删除用户失败:', error)
+      ElMessage.error('删除用户失败: ' + (error.message || '未知错误'))
     }
   }
 }
@@ -765,11 +772,13 @@ const loadUsers = async () => {
       ...filters
     })
     
-    users.value = response.data
-    pagination.total = response.total
+    users.value = response.data || []
+    pagination.total = response.total || 0
   } catch (error) {
     console.error('加载用户失败:', error)
     ElMessage.error('加载用户列表失败')
+    users.value = []
+    pagination.total = 0
   } finally {
     loading.value = false
   }

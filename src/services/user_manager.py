@@ -185,6 +185,71 @@ class UserManager:
             logger.error(f"Failed to list users: {str(e)}")
             return []
             
+    async def list_users_paginated(self, skip: int = 0, limit: int = 100, active_only: bool = False, filters: Dict[str, Any] = None) -> tuple[List[User], int]:
+        """获取分页用户列表"""
+        try:
+            async with async_session_maker() as session:
+                query = select(User)
+                count_query = select(User)
+                
+                # 应用基本过滤条件
+                if active_only:
+                    query = query.where(User.is_active == True)
+                    count_query = count_query.where(User.is_active == True)
+                
+                # 应用搜索过滤条件
+                if filters:
+                    if filters.get('search'):
+                        search_term = f"%{filters['search']}%"
+                        search_condition = or_(
+                            User.username.like(search_term),
+                            User.email.like(search_term),
+                            User.full_name.like(search_term)
+                        )
+                        query = query.where(search_condition)
+                        count_query = count_query.where(search_condition)
+                    
+                    if filters.get('username'):
+                        username_term = f"%{filters['username']}%"
+                        query = query.where(User.username.like(username_term))
+                        count_query = count_query.where(User.username.like(username_term))
+                    
+                    if filters.get('email'):
+                        email_term = f"%{filters['email']}%"
+                        query = query.where(User.email.like(email_term))
+                        count_query = count_query.where(User.email.like(email_term))
+                    
+                    if filters.get('role'):
+                        if filters['role'] == 'admin':
+                            query = query.where(User.is_admin == True)
+                            count_query = count_query.where(User.is_admin == True)
+                        elif filters['role'] in ['operator', 'viewer']:
+                            query = query.where(User.is_admin == False)
+                            count_query = count_query.where(User.is_admin == False)
+                    
+                    if filters.get('status'):
+                        if filters['status'] == 'active':
+                            query = query.where(User.is_active == True)
+                            count_query = count_query.where(User.is_active == True)
+                        elif filters['status'] == 'disabled':
+                            query = query.where(User.is_active == False)
+                            count_query = count_query.where(User.is_active == False)
+                
+                # 获取总数
+                count_result = await session.execute(count_query)
+                total = len(count_result.scalars().all())
+                
+                # 获取分页数据
+                query = query.offset(skip).limit(limit).order_by(User.created_at.desc())
+                result = await session.execute(query)
+                users = result.scalars().all()
+                
+                return users, total
+                
+        except Exception as e:
+            logger.error(f"Failed to list users paginated: {str(e)}")
+            return [], 0
+            
     async def authenticate_user(self, username: str, password: str) -> Optional[User]:
         """用户认证"""
         try:

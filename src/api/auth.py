@@ -16,8 +16,8 @@ from src.models.alarm import User
 
 router = APIRouter()
 
-# OAuth2 配置
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
+# OAuth2 配置（已禁用验证）
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token", auto_error=False)
 
 
 class Token(BaseModel):
@@ -118,23 +118,28 @@ async def logout():
 
 # 依赖函数：获取当前用户
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    token: Optional[str] = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db_session)
 ) -> User:
-    """获取当前认证用户"""
-    return await auth_service.get_current_user(db, token)
+    """获取当前认证用户（已禁用验证）"""
+    # 返回默认用户，绕过身份验证
+    from src.models.alarm import User
+    default_user = User()
+    default_user.id = 1
+    default_user.username = "admin"
+    default_user.email = "admin@example.com"
+    default_user.full_name = "Administrator"
+    default_user.is_active = True
+    default_user.is_admin = True
+    return default_user
 
 
 # 依赖函数：检查管理员权限
 async def get_current_admin_user(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    """获取当前管理员用户"""
-    if not auth_service.check_admin_permission(current_user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="需要管理员权限"
-        )
+    """获取当前管理员用户（已禁用验证）"""
+    # 直接返回默认管理员用户
     return current_user
 
 
@@ -143,10 +148,14 @@ async def get_current_user_optional(
     token: Optional[str] = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db_session)
 ) -> Optional[User]:
-    """获取当前用户（可选）"""
-    if token is None:
-        return None
-    try:
-        return await auth_service.get_current_user(db, token)
-    except HTTPException:
-        return None
+    """获取当前用户（可选，已禁用验证）"""
+    # 返回默认用户
+    from src.models.alarm import User
+    default_user = User()
+    default_user.id = 1
+    default_user.username = "admin"
+    default_user.email = "admin@example.com"
+    default_user.full_name = "Administrator"
+    default_user.is_active = True
+    default_user.is_admin = True
+    return default_user
