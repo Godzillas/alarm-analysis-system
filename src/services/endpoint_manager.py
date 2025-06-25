@@ -24,6 +24,26 @@ class EndpointManager:
     def __init__(self):
         self.active_endpoints: Dict[int, Dict] = {}
         self.endpoint_stats: Dict[int, Dict] = {}
+        # 创建一个异步任务来初始化已启用的接入点
+        import asyncio
+        asyncio.create_task(self._initialize_enabled_endpoints())
+        
+    async def _initialize_enabled_endpoints(self):
+        """初始化已启用的接入点"""
+        try:
+            async with async_session_maker() as session:
+                result = await session.execute(
+                    select(Endpoint).where(Endpoint.enabled == True)
+                )
+                enabled_endpoints = result.scalars().all()
+                
+                for endpoint in enabled_endpoints:
+                    await self._activate_endpoint(endpoint)
+                    
+                logger.info(f"Initialized {len(enabled_endpoints)} enabled endpoints")
+                
+        except Exception as e:
+            logger.error(f"Failed to initialize enabled endpoints: {str(e)}")
         
     async def create_endpoint(self, endpoint_data: Dict[str, Any]) -> Optional[Endpoint]:
         """创建新的接入点"""

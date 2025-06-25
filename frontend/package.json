@@ -1,0 +1,46 @@
+{
+  "name": "alarm-analysis-frontend",
+  "version": "1.0.0",
+  "description": "告警分析系统前端",
+  "private": true,
+  "scripts": {
+    "serve": "vue-cli-service serve",
+    "build": "vue-cli-service build",
+    "lint": "vue-cli-service lint",
+    "dev": "vue-cli-service serve --mode development",
+    "build:prod": "vue-cli-service build --mode production"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.1.0",
+    "axios": "^1.5.0",
+    "dayjs": "^1.11.13",
+    "echarts": "^5.4.0",
+    "element-plus": "^2.4.0",
+    "nprogress": "^0.2.0",
+    "pinia": "^2.1.0",
+    "vue": "^3.3.0",
+    "vue-echarts": "^6.6.0",
+    "vue-router": "^4.2.0"
+  },
+  "devDependencies": {
+    "@vue/cli-plugin-babel": "^5.0.0",
+    "@vue/cli-plugin-eslint": "^5.0.0",
+    "@vue/cli-plugin-router": "^5.0.0",
+    "@vue/cli-service": "^5.0.0",
+    "@vue/eslint-config-prettier": "^9.0.0",
+    "eslint": "^8.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "eslint-plugin-vue": "^9.0.0",
+    "prettier": "^3.0.0",
+    "sass": "^1.60.0",
+    "sass-loader": "^13.0.0",
+    "unplugin-auto-import": "^0.16.0",
+    "unplugin-vue-components": "^0.25.0"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead",
+    "not ie 11"
+  ]
+}

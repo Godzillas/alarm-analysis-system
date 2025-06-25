@@ -23,29 +23,29 @@ class AlarmAggregator:
         self.aggregation_cache: Dict[str, Dict] = {}
         self.trends_cache: Dict[str, List] = {}
         
-    async def get_alarm_summary(self, time_range: str = "24h") -> Dict[str, Any]:
+    async def get_alarm_summary(self, time_range: str = "24h", system_id: Optional[int] = None) -> Dict[str, Any]:
         """获取告警汇总统计"""
         try:
             start_time = self._get_start_time(time_range)
             
             async with async_session_maker() as session:
                 # 基础统计
-                basic_stats = await self._get_basic_stats(session, start_time)
+                basic_stats = await self._get_basic_stats(session, start_time, system_id)
                 
                 # 按严重程度统计
-                severity_stats = await self._get_severity_stats(session, start_time)
+                severity_stats = await self._get_severity_stats(session, start_time, system_id)
                 
                 # 按状态统计
-                status_stats = await self._get_status_stats(session, start_time)
+                status_stats = await self._get_status_stats(session, start_time, system_id)
                 
                 # 按来源统计
-                source_stats = await self._get_source_stats(session, start_time)
+                source_stats = await self._get_source_stats(session, start_time, system_id)
                 
                 # 按主机统计
-                host_stats = await self._get_host_stats(session, start_time)
+                host_stats = await self._get_host_stats(session, start_time, system_id)
                 
                 # 按服务统计
-                service_stats = await self._get_service_stats(session, start_time)
+                service_stats = await self._get_service_stats(session, start_time, system_id)
                 
                 return {
                     "time_range": time_range,
@@ -62,7 +62,7 @@ class AlarmAggregator:
             logger.error(f"Failed to get alarm summary: {str(e)}")
             return {}
             
-    async def get_alarm_trends(self, time_range: str = "24h", interval: str = "1h") -> Dict[str, Any]:
+    async def get_alarm_trends(self, time_range: str = "24h", interval: str = "1h", system_id: Optional[int] = None) -> Dict[str, Any]:
         """获取告警趋势数据"""
         try:
             start_time = self._get_start_time(time_range)
@@ -103,7 +103,7 @@ class AlarmAggregator:
             logger.error(f"Failed to get alarm trends: {str(e)}")
             return {}
             
-    async def get_top_alarms(self, time_range: str = "24h", limit: int = 10) -> Dict[str, Any]:
+    async def get_top_alarms(self, time_range: str = "24h", limit: int = 10, system_id: Optional[int] = None) -> Dict[str, Any]:
         """获取TOP告警统计"""
         try:
             start_time = self._get_start_time(time_range)
@@ -133,7 +133,7 @@ class AlarmAggregator:
             logger.error(f"Failed to get top alarms: {str(e)}")
             return {}
             
-    async def get_distribution_stats(self, time_range: str = "24h") -> Dict[str, Any]:
+    async def get_distribution_stats(self, time_range: str = "24h", system_id: Optional[int] = None) -> Dict[str, Any]:
         """获取告警分发统计"""
         try:
             start_time = self._get_start_time(time_range)
@@ -197,7 +197,7 @@ class AlarmAggregator:
             logger.error(f"Failed to get distribution stats: {str(e)}")
             return {}
             
-    async def get_correlation_analysis(self, time_range: str = "24h") -> Dict[str, Any]:
+    async def get_correlation_analysis(self, time_range: str = "24h", system_id: Optional[int] = None) -> Dict[str, Any]:
         """获取告警关联分析"""
         try:
             start_time = self._get_start_time(time_range)
@@ -234,9 +234,20 @@ class AlarmAggregator:
         except Exception as e:
             logger.error(f"Failed to get correlation analysis: {str(e)}")
             return {}
+    
+    def _build_conditions(self, start_time: datetime, system_id: Optional[int] = None) -> list:
+        """构建查询条件"""
+        conditions = [AlarmTable.created_at >= start_time]
+        if system_id is not None:
+            conditions.append(AlarmTable.system_id == system_id)
+        return conditions
             
-    async def _get_basic_stats(self, session: AsyncSession, start_time: datetime) -> Dict[str, int]:
+    async def _get_basic_stats(self, session: AsyncSession, start_time: datetime, system_id: Optional[int] = None) -> Dict[str, int]:
         """获取基础统计"""
+        conditions = [AlarmTable.created_at >= start_time]
+        if system_id is not None:
+            conditions.append(AlarmTable.system_id == system_id)
+            
         result = await session.execute(
             select(
                 func.count(AlarmTable.id).label('total'),
@@ -244,9 +255,7 @@ class AlarmAggregator:
                 func.count(AlarmTable.id).filter(AlarmTable.status == 'resolved').label('resolved'),
                 func.count(AlarmTable.id).filter(AlarmTable.status == 'acknowledged').label('acknowledged'),
                 func.count(AlarmTable.id).filter(AlarmTable.is_duplicate == True).label('duplicates')
-            ).where(
-                AlarmTable.created_at >= start_time
-            )
+            ).where(and_(*conditions))
         )
         stats = result.first()
         
@@ -258,73 +267,64 @@ class AlarmAggregator:
             "duplicates": stats.duplicates or 0
         }
         
-    async def _get_severity_stats(self, session: AsyncSession, start_time: datetime) -> Dict[str, int]:
+    async def _get_severity_stats(self, session: AsyncSession, start_time: datetime, system_id: Optional[int] = None) -> Dict[str, int]:
         """获取严重程度统计"""
+        conditions = self._build_conditions(start_time, system_id)
         result = await session.execute(
             select(
                 AlarmTable.severity,
                 func.count(AlarmTable.id).label('count')
-            ).where(
-                AlarmTable.created_at >= start_time
-            ).group_by(AlarmTable.severity)
+            ).where(and_(*conditions)).group_by(AlarmTable.severity)
         )
         
         return {row.severity: row.count for row in result.all()}
         
-    async def _get_status_stats(self, session: AsyncSession, start_time: datetime) -> Dict[str, int]:
+    async def _get_status_stats(self, session: AsyncSession, start_time: datetime, system_id: Optional[int] = None) -> Dict[str, int]:
         """获取状态统计"""
+        conditions = self._build_conditions(start_time, system_id)
         result = await session.execute(
             select(
                 AlarmTable.status,
                 func.count(AlarmTable.id).label('count')
-            ).where(
-                AlarmTable.created_at >= start_time
-            ).group_by(AlarmTable.status)
+            ).where(and_(*conditions)).group_by(AlarmTable.status)
         )
         
         return {row.status: row.count for row in result.all()}
         
-    async def _get_source_stats(self, session: AsyncSession, start_time: datetime) -> List[Dict[str, Any]]:
+    async def _get_source_stats(self, session: AsyncSession, start_time: datetime, system_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """获取来源统计"""
+        conditions = self._build_conditions(start_time, system_id)
         result = await session.execute(
             select(
                 AlarmTable.source,
                 func.count(AlarmTable.id).label('count')
-            ).where(
-                AlarmTable.created_at >= start_time
-            ).group_by(AlarmTable.source).order_by(desc('count')).limit(10)
+            ).where(and_(*conditions)).group_by(AlarmTable.source).order_by(desc('count')).limit(10)
         )
         
         return [{"source": row.source, "count": row.count} for row in result.all()]
         
-    async def _get_host_stats(self, session: AsyncSession, start_time: datetime) -> List[Dict[str, Any]]:
+    async def _get_host_stats(self, session: AsyncSession, start_time: datetime, system_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """获取主机统计"""
+        conditions = self._build_conditions(start_time, system_id)
+        conditions.append(AlarmTable.host.isnot(None))
         result = await session.execute(
             select(
                 AlarmTable.host,
                 func.count(AlarmTable.id).label('count')
-            ).where(
-                and_(
-                    AlarmTable.created_at >= start_time,
-                    AlarmTable.host.isnot(None)
-                )
-            ).group_by(AlarmTable.host).order_by(desc('count')).limit(10)
+            ).where(and_(*conditions)).group_by(AlarmTable.host).order_by(desc('count')).limit(10)
         )
         
         return [{"host": row.host, "count": row.count} for row in result.all()]
         
-    async def _get_service_stats(self, session: AsyncSession, start_time: datetime) -> List[Dict[str, Any]]:
+    async def _get_service_stats(self, session: AsyncSession, start_time: datetime, system_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """获取服务统计"""
+        conditions = self._build_conditions(start_time, system_id)
+        conditions.append(AlarmTable.service.isnot(None))
         result = await session.execute(
             select(
                 AlarmTable.service,
                 func.count(AlarmTable.id).label('count')
-            ).where(
-                and_(
-                    AlarmTable.created_at >= start_time,
-                    AlarmTable.service.isnot(None)
-                )
-            ).group_by(AlarmTable.service).order_by(desc('count')).limit(10)
+            ).where(and_(*conditions)).group_by(AlarmTable.service).order_by(desc('count')).limit(10)
         )
         
         return [{"service": row.service, "count": row.count} for row in result.all()]

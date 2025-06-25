@@ -100,20 +100,25 @@ class AlarmCollector:
             return False
             
     async def _send_to_redis(self, alarm_event: AlarmEvent):
-        alarm_data = {
-            "source": alarm_event.source,
-            "title": alarm_event.title,
-            "description": alarm_event.description,
-            "severity": alarm_event.severity,
-            "category": alarm_event.category,
-            "tags": alarm_event.tags,
-            "metadata": alarm_event.metadata,
-            "host": alarm_event.host,
-            "service": alarm_event.service,
-            "environment": alarm_event.environment,
-            "timestamp": alarm_event.timestamp.isoformat() if alarm_event.timestamp else datetime.utcnow().isoformat()
-        }
-        await self.redis_client.lpush("alarm_queue", json.dumps(alarm_data))
+        try:
+            alarm_data = {
+                "source": alarm_event.source,
+                "title": alarm_event.title,
+                "description": alarm_event.description,
+                "severity": alarm_event.severity,
+                "category": alarm_event.category,
+                "tags": alarm_event.tags,
+                "metadata": alarm_event.metadata,
+                "host": alarm_event.host,
+                "service": alarm_event.service,
+                "environment": alarm_event.environment,
+                "timestamp": alarm_event.timestamp.isoformat() if alarm_event.timestamp else datetime.utcnow().isoformat()
+            }
+            await self.redis_client.lpush("alarm_queue", json.dumps(alarm_data))
+        except redis.ConnectionError as e:
+            logger.warning(f"Redis发送失败，切换到内存缓冲: {e}")
+            await self._add_to_buffer(alarm_event)
+            await self._reconnect_redis()
         
     async def _add_to_buffer(self, alarm_event: AlarmEvent):
         self.buffer.append(alarm_event)
@@ -124,6 +129,9 @@ class AlarmCollector:
             
         while self.is_running:
             try:
+                # 检查连接状态
+                await self.redis_client.ping()
+                
                 result = await self.redis_client.brpop("alarm_queue", timeout=1)
                 if result:
                     _, alarm_data = result
@@ -135,9 +143,29 @@ class AlarmCollector:
                     alarm_event = AlarmEvent(**alarm_dict)
                     self.buffer.append(alarm_event)
                     
+            except redis.ConnectionError as e:
+                logger.warning(f"Redis连接错误: {e}, 尝试重连...")
+                await self._reconnect_redis()
+                await asyncio.sleep(5)
+            except redis.TimeoutError:
+                # 超时是正常的，继续循环
+                continue
             except Exception as e:
                 logger.error(f"Redis消费者错误: {e}")
                 await asyncio.sleep(1)
+    
+    async def _reconnect_redis(self):
+        """重新连接Redis"""
+        try:
+            if self.redis_client:
+                await self.redis_client.close()
+            
+            self.redis_client = redis.from_url(settings.REDIS_URL)
+            await self.redis_client.ping()
+            logger.info("Redis重连成功")
+        except Exception as e:
+            logger.error(f"Redis重连失败: {e}")
+            self.redis_client = None
                 
     async def _flush_worker(self):
         while self.is_running:

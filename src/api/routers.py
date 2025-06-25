@@ -2,6 +2,7 @@
 API路由定义
 """
 
+import logging
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, WebSocket, WebSocketDisconnect
@@ -10,18 +11,27 @@ from sqlalchemy import select, func, and_, or_, desc
 from sqlalchemy.sql import case
 from sqlalchemy.ext.asyncio import AsyncSession
 
+logger = logging.getLogger(__name__)
+
+# 导入系统管理路由
+from src.api.system import router as system_api_router
+# 导入联络点管理路由
+from src.api.contact_point import router as contact_point_router
+
 from src.core.database import get_db_session
 from src.models.alarm import (
     AlarmTable, AlarmCreate, AlarmUpdate, AlarmResponse, AlarmStats,
     AlarmStatus, AlarmSeverity, Endpoint, EndpointCreate, EndpointUpdate, 
     EndpointResponse, User, UserCreate, UserUpdate, UserResponse,
     UserSubscription, SubscriptionCreate, SubscriptionResponse,
-    RuleGroup, DistributionRule
+    RuleGroup, DistributionRule, PaginatedResponse, System, SystemCreate,
+    SystemUpdate, SystemResponse
 )
 from src.services.collector import AlarmCollector
 from src.services.analyzer import AlarmAnalyzer
 from src.services.endpoint_manager import EndpointManager
 from src.services.user_manager import UserManager
+from src.services.system_manager import SystemManager
 from src.services.rule_engine import RuleEngine
 from src.services.aggregator import AlarmAggregator
 
@@ -30,6 +40,7 @@ dashboard_router = APIRouter()
 config_router = APIRouter()
 endpoint_router = APIRouter()
 user_router = APIRouter()
+system_router = APIRouter()
 rule_router = APIRouter()
 analytics_router = APIRouter()
 websocket_router = APIRouter()
@@ -40,6 +51,7 @@ collector = None
 analyzer = None
 endpoint_manager = None
 user_manager = None
+system_manager = None
 rule_engine = None
 aggregator = None
 
@@ -70,6 +82,13 @@ def get_user_manager():
     if user_manager is None:
         user_manager = UserManager()
     return user_manager
+
+
+def get_system_manager():
+    global system_manager
+    if system_manager is None:
+        system_manager = SystemManager()
+    return system_manager
 
 
 def get_rule_engine():
@@ -107,7 +126,7 @@ async def create_alarm(
         raise HTTPException(status_code=500, detail=f"创建告警失败: {str(e)}")
 
 
-@alarm_router.get("/", response_model=List[AlarmResponse])
+@alarm_router.get("/", response_model=PaginatedResponse[AlarmResponse])
 async def get_alarms(
     db: AsyncSession = Depends(get_db_session),
     status: Optional[AlarmStatus] = None,
@@ -116,11 +135,15 @@ async def get_alarms(
     host: Optional[str] = None,
     service: Optional[str] = None,
     environment: Optional[str] = None,
+    system_id: Optional[int] = Query(None, description="系统 ID 过滤"),
+    search: Optional[str] = None,
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000)
+    limit: int = Query(20, ge=1, le=1000)
 ):
     """获取告警列表"""
-    query = select(AlarmTable)
+    # 构建基础查询
+    base_query = select(AlarmTable)
+    count_query = select(func.count(AlarmTable.id))
     
     filters = []
     if status:
@@ -128,21 +151,46 @@ async def get_alarms(
     if severity:
         filters.append(AlarmTable.severity == severity)
     if source:
-        filters.append(AlarmTable.source == source)
+        filters.append(AlarmTable.source.ilike(f"%{source}%"))
     if host:
-        filters.append(AlarmTable.host == host)
+        filters.append(AlarmTable.host.ilike(f"%{host}%"))
     if service:
-        filters.append(AlarmTable.service == service)
+        filters.append(AlarmTable.service.ilike(f"%{service}%"))
     if environment:
-        filters.append(AlarmTable.environment == environment)
+        filters.append(AlarmTable.environment.ilike(f"%{environment}%"))
+    if system_id:
+        filters.append(AlarmTable.system_id == system_id)
+    if search:
+        search_filter = or_(
+            AlarmTable.title.ilike(f"%{search}%"),
+            AlarmTable.description.ilike(f"%{search}%")
+        )
+        filters.append(search_filter)
         
     if filters:
-        query = query.where(and_(*filters))
-        
-    query = query.order_by(desc(AlarmTable.created_at)).offset(skip).limit(limit)
+        base_query = base_query.where(and_(*filters))
+        count_query = count_query.where(and_(*filters))
     
-    result = await db.execute(query)
-    return result.scalars().all()
+    # 获取总数
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+    
+    # 获取分页数据
+    data_query = base_query.order_by(desc(AlarmTable.created_at)).offset(skip).limit(limit)
+    result = await db.execute(data_query)
+    alarms = result.scalars().all()
+    
+    # 计算分页信息
+    page = (skip // limit) + 1
+    pages = (total + limit - 1) // limit
+    
+    return PaginatedResponse[AlarmResponse](
+        data=alarms,
+        total=total,
+        page=page,
+        page_size=limit,
+        pages=pages
+    )
 
 
 @alarm_router.get("/{alarm_id}", response_model=AlarmResponse)
@@ -203,23 +251,112 @@ async def delete_alarm(alarm_id: int, db: AsyncSession = Depends(get_db_session)
     return {"message": "告警删除成功"}
 
 
+@alarm_router.post("/{alarm_id}/acknowledge", response_model=AlarmResponse)
+async def acknowledge_alarm(alarm_id: int, db: AsyncSession = Depends(get_db_session)):
+    """确认告警"""
+    result = await db.execute(select(AlarmTable).where(AlarmTable.id == alarm_id))
+    alarm = result.scalars().first()
+    
+    if not alarm:
+        raise HTTPException(status_code=404, detail="告警不存在")
+    
+    # 更新状态和确认时间
+    alarm.status = AlarmStatus.ACKNOWLEDGED
+    alarm.acknowledged_at = datetime.utcnow()
+    alarm.updated_at = datetime.utcnow()
+    
+    await db.commit()
+    await db.refresh(alarm)
+    
+    return alarm
+
+
+@alarm_router.post("/{alarm_id}/resolve", response_model=AlarmResponse)
+async def resolve_alarm(alarm_id: int, db: AsyncSession = Depends(get_db_session)):
+    """解决告警"""
+    result = await db.execute(select(AlarmTable).where(AlarmTable.id == alarm_id))
+    alarm = result.scalars().first()
+    
+    if not alarm:
+        raise HTTPException(status_code=404, detail="告警不存在")
+    
+    # 更新状态和解决时间
+    alarm.status = AlarmStatus.RESOLVED
+    alarm.resolved_at = datetime.utcnow()
+    alarm.updated_at = datetime.utcnow()
+    
+    await db.commit()
+    await db.refresh(alarm)
+    
+    return alarm
+
+
+@alarm_router.post("/batch")
+async def batch_operation(
+    operation_data: Dict[str, Any] = Body(...),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """批量操作告警"""
+    action = operation_data.get("action")
+    alarm_ids = operation_data.get("alarm_ids", [])
+    
+    if not action or not alarm_ids:
+        raise HTTPException(status_code=400, detail="缺少操作类型或告警ID")
+    
+    # 查询告警
+    result = await db.execute(select(AlarmTable).where(AlarmTable.id.in_(alarm_ids)))
+    alarms = result.scalars().all()
+    
+    if not alarms:
+        raise HTTPException(status_code=404, detail="未找到指定的告警")
+    
+    updated_count = 0
+    
+    for alarm in alarms:
+        if action == "acknowledge":
+            alarm.status = AlarmStatus.ACKNOWLEDGED
+            alarm.acknowledged_at = datetime.utcnow()
+        elif action == "resolve":
+            alarm.status = AlarmStatus.RESOLVED
+            alarm.resolved_at = datetime.utcnow()
+        elif action == "delete":
+            await db.delete(alarm)
+            updated_count += 1
+            continue
+        else:
+            raise HTTPException(status_code=400, detail=f"不支持的操作: {action}")
+        
+        alarm.updated_at = datetime.utcnow()
+        updated_count += 1
+    
+    await db.commit()
+    
+    return {"message": f"成功{action} {updated_count}条告警"}
+
+
 @alarm_router.get("/stats/summary", response_model=AlarmStats)
-async def get_alarm_stats(db: AsyncSession = Depends(get_db_session)):
+async def get_alarm_stats(
+    system_id: Optional[int] = Query(None, description="系统 ID 过滤"),
+    db: AsyncSession = Depends(get_db_session)
+):
     """获取告警统计"""
-    result = await db.execute(
-        select(
-            func.count(AlarmTable.id).label('total'),
-            func.sum(case((AlarmTable.status == AlarmStatus.ACTIVE, 1), else_=0)).label('active'),
-            func.sum(case((AlarmTable.status == AlarmStatus.RESOLVED, 1), else_=0)).label('resolved'),
-            func.sum(case((AlarmTable.status == AlarmStatus.ACKNOWLEDGED, 1), else_=0)).label('acknowledged'),
-            func.sum(case((AlarmTable.status == AlarmStatus.SUPPRESSED, 1), else_=0)).label('suppressed'),
-            func.sum(case((AlarmTable.severity == AlarmSeverity.CRITICAL, 1), else_=0)).label('critical'),
-            func.sum(case((AlarmTable.severity == AlarmSeverity.HIGH, 1), else_=0)).label('high'),
-            func.sum(case((AlarmTable.severity == AlarmSeverity.MEDIUM, 1), else_=0)).label('medium'),
-            func.sum(case((AlarmTable.severity == AlarmSeverity.LOW, 1), else_=0)).label('low'),
-            func.sum(case((AlarmTable.severity == AlarmSeverity.INFO, 1), else_=0)).label('info')
-        )
+    query = select(
+        func.count(AlarmTable.id).label('total'),
+        func.sum(case((AlarmTable.status == AlarmStatus.ACTIVE, 1), else_=0)).label('active'),
+        func.sum(case((AlarmTable.status == AlarmStatus.RESOLVED, 1), else_=0)).label('resolved'),
+        func.sum(case((AlarmTable.status == AlarmStatus.ACKNOWLEDGED, 1), else_=0)).label('acknowledged'),
+        func.sum(case((AlarmTable.status == AlarmStatus.SUPPRESSED, 1), else_=0)).label('suppressed'),
+        func.sum(case((AlarmTable.severity == AlarmSeverity.CRITICAL, 1), else_=0)).label('critical'),
+        func.sum(case((AlarmTable.severity == AlarmSeverity.HIGH, 1), else_=0)).label('high'),
+        func.sum(case((AlarmTable.severity == AlarmSeverity.MEDIUM, 1), else_=0)).label('medium'),
+        func.sum(case((AlarmTable.severity == AlarmSeverity.LOW, 1), else_=0)).label('low'),
+        func.sum(case((AlarmTable.severity == AlarmSeverity.INFO, 1), else_=0)).label('info')
     )
+    
+    if system_id:
+        query = query.where(AlarmTable.system_id == system_id)
+    
+    result = await db.execute(query)
     
     stats = result.first()
     
@@ -338,6 +475,7 @@ async def dashboard_home():
 
 @dashboard_router.get("/metrics")
 async def get_dashboard_metrics(
+    system_id: Optional[int] = Query(None, description="系统 ID 过滤"),
     db: AsyncSession = Depends(get_db_session),
     collector: AlarmCollector = Depends(get_collector),
     analyzer: AlarmAnalyzer = Depends(get_analyzer)
@@ -347,16 +485,21 @@ async def get_dashboard_metrics(
     collector_stats = await collector.get_stats()
     analyzer_stats = await analyzer.get_analysis_summary()
     
-    recent_alarms = await db.execute(
-        select(
-            AlarmTable.created_at,
-            func.count(AlarmTable.id).label('count')
-        ).where(
-            AlarmTable.created_at >= datetime.utcnow() - timedelta(hours=24)
-        ).group_by(
-            func.date_trunc('hour', AlarmTable.created_at)
-        ).order_by(AlarmTable.created_at)
+    query = select(
+        AlarmTable.created_at,
+        func.count(AlarmTable.id).label('count')
+    ).where(
+        AlarmTable.created_at >= datetime.utcnow() - timedelta(hours=24)
     )
+    
+    if system_id:
+        query = query.where(AlarmTable.system_id == system_id)
+    
+    query = query.group_by(
+        func.date_trunc('hour', AlarmTable.created_at)
+    ).order_by(AlarmTable.created_at)
+    
+    recent_alarms = await db.execute(query)
     
     timeline_data = [
         {"time": row.created_at.isoformat(), "count": row.count}
@@ -581,6 +724,21 @@ async def get_user_subscriptions(
     return await manager.get_user_subscriptions(user_id)
 
 
+@user_router.get("/{user_id}/systems", response_model=List[SystemResponse])
+async def get_user_systems(
+    user_id: int,
+    manager: UserManager = Depends(get_user_manager)
+):
+    """获取用户关联的系统列表"""
+    try:
+        # 使用 SystemManager 来获取用户关联的系统
+        system_manager = get_system_manager()
+        return await system_manager.get_user_systems(user_id)
+    except Exception as e:
+        logger.error(f"Failed to get user systems: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取用户系统列表失败")
+
+
 # 规则管理路由
 @rule_router.post("/groups")
 async def create_rule_group(
@@ -618,48 +776,53 @@ async def get_rule_stats(
 @analytics_router.get("/summary")
 async def get_alarm_summary(
     time_range: str = Query("24h", regex="^(1h|6h|24h|7d|30d)$"),
+    system_id: Optional[int] = Query(None, description="系统 ID 过滤"),
     aggregator: AlarmAggregator = Depends(get_aggregator)
 ):
     """获取告警汇总统计"""
-    return await aggregator.get_alarm_summary(time_range)
+    return await aggregator.get_alarm_summary(time_range, system_id)
 
 
 @analytics_router.get("/trends")
 async def get_alarm_trends(
     time_range: str = Query("24h", regex="^(1h|6h|24h|7d|30d)$"),
     interval: str = Query("1h", regex="^(1h|1d)$"),
+    system_id: Optional[int] = Query(None, description="系统 ID 过滤"),
     aggregator: AlarmAggregator = Depends(get_aggregator)
 ):
     """获取告警趋势"""
-    return await aggregator.get_alarm_trends(time_range, interval)
+    return await aggregator.get_alarm_trends(time_range, interval, system_id)
 
 
 @analytics_router.get("/top")
 async def get_top_alarms(
     time_range: str = Query("24h", regex="^(1h|6h|24h|7d|30d)$"),
     limit: int = Query(10, ge=1, le=100),
+    system_id: Optional[int] = Query(None, description="系统 ID 过滤"),
     aggregator: AlarmAggregator = Depends(get_aggregator)
 ):
     """获取TOP告警"""
-    return await aggregator.get_top_alarms(time_range, limit)
+    return await aggregator.get_top_alarms(time_range, limit, system_id)
 
 
 @analytics_router.get("/distribution")
 async def get_distribution_stats(
     time_range: str = Query("24h", regex="^(1h|6h|24h|7d|30d)$"),
+    system_id: Optional[int] = Query(None, description="系统 ID 过滤"),
     aggregator: AlarmAggregator = Depends(get_aggregator)
 ):
     """获取分发统计"""
-    return await aggregator.get_distribution_stats(time_range)
+    return await aggregator.get_distribution_stats(time_range, system_id)
 
 
 @analytics_router.get("/correlation")
 async def get_correlation_analysis(
     time_range: str = Query("24h", regex="^(1h|6h|24h|7d|30d)$"),
+    system_id: Optional[int] = Query(None, description="系统 ID 过滤"),
     aggregator: AlarmAggregator = Depends(get_aggregator)
 ):
     """获取关联分析"""
-    return await aggregator.get_correlation_analysis(time_range)
+    return await aggregator.get_correlation_analysis(time_range, system_id)
 
 
 @analytics_router.post("/cache/clear")
@@ -694,6 +857,30 @@ async def get_websocket_stats():
     from src.services.websocket_manager import connection_manager
     return connection_manager.get_connection_stats()
 
+
+# Prometheus Webhook特殊端点
+@webhook_router.post("/prometheus")
+async def receive_prometheus_webhook(
+    webhook_data: Dict[str, Any] = Body(...)
+):
+    """接收Prometheus/Alertmanager Webhook告警"""
+    try:
+        from src.adapters.prometheus_webhook import PrometheusWebhookAdapter
+        from main import get_global_collector
+        
+        # 使用全局启动的collector实例
+        collector = get_global_collector()
+        if collector is None:
+            # 回退到本地collector实例
+            collector = get_collector()
+        adapter = PrometheusWebhookAdapter(collector=collector)
+        result = await adapter.process_webhook(webhook_data)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to process Prometheus webhook: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Prometheus webhook处理失败: {str(e)}")
 
 # Webhook告警接收路由
 @webhook_router.post("/alarm/{api_token}")
@@ -799,3 +986,108 @@ async def receive_batch_webhook_alarms(
     except Exception as e:
         logger.error(f"Failed to receive batch webhook alarms: {str(e)}")
         raise HTTPException(status_code=500, detail="内部服务器错误")
+
+
+# 系统管理路由
+@system_router.post("/", response_model=SystemResponse)
+async def create_system(
+    system: SystemCreate,
+    manager: SystemManager = Depends(get_system_manager)
+):
+    """创建系统"""
+    result = await manager.create_system(system.dict())
+    if not result:
+        raise HTTPException(status_code=500, detail="创建系统失败")
+    return result
+
+
+@system_router.get("/", response_model=List[SystemResponse])
+async def list_systems(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    enabled_only: bool = False,
+    manager: SystemManager = Depends(get_system_manager)
+):
+    """获取系统列表"""
+    return await manager.list_systems(skip, limit, enabled_only)
+
+
+@system_router.get("/{system_id}", response_model=SystemResponse)
+async def get_system(
+    system_id: int,
+    manager: SystemManager = Depends(get_system_manager)
+):
+    """获取系统详情"""
+    result = await manager.get_system(system_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="系统不存在")
+    return result
+
+
+@system_router.put("/{system_id}", response_model=SystemResponse)
+async def update_system(
+    system_id: int,
+    system_update: SystemUpdate,
+    manager: SystemManager = Depends(get_system_manager)
+):
+    """更新系统"""
+    result = await manager.update_system(system_id, system_update.dict(exclude_unset=True))
+    if not result:
+        raise HTTPException(status_code=404, detail="系统不存在")
+    return result
+
+
+@system_router.delete("/{system_id}")
+async def delete_system(
+    system_id: int,
+    manager: SystemManager = Depends(get_system_manager)
+):
+    """删除系统"""
+    success = await manager.delete_system(system_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="系统不存在")
+    return {"message": "系统删除成功"}
+
+
+@system_router.post("/{system_id}/users/{user_id}")
+async def add_user_to_system(
+    system_id: int,
+    user_id: int,
+    manager: SystemManager = Depends(get_system_manager)
+):
+    """将用户添加到系统"""
+    success = await manager.add_user_to_system(user_id, system_id)
+    if not success:
+        raise HTTPException(status_code=400, detail="添加用户到系统失败")
+    return {"message": "用户添加成功"}
+
+
+@system_router.delete("/{system_id}/users/{user_id}")
+async def remove_user_from_system(
+    system_id: int,
+    user_id: int,
+    manager: SystemManager = Depends(get_system_manager)
+):
+    """从系统中移除用户"""
+    success = await manager.remove_user_from_system(user_id, system_id)
+    if not success:
+        raise HTTPException(status_code=400, detail="移除用户失败")
+    return {"message": "用户移除成功"}
+
+
+@system_router.get("/{system_id}/users", response_model=List[UserResponse])
+async def get_system_users(
+    system_id: int,
+    manager: SystemManager = Depends(get_system_manager)
+):
+    """获取系统用户列表"""
+    return await manager.get_system_users(system_id)
+
+
+@system_router.get("/{system_id}/stats")
+async def get_system_stats(
+    system_id: int,
+    manager: SystemManager = Depends(get_system_manager)
+):
+    """获取系统统计信息"""
+    return await manager.get_system_stats(system_id)
