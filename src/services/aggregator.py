@@ -11,9 +11,11 @@ from sqlalchemy import select, func, and_, or_, desc, asc
 from sqlalchemy.ext.asyncio import AsyncSession
 from collections import defaultdict, Counter
 
-from src.core.database import async_session_maker
+from src.core.database import async_session_maker, engine
 from src.models.alarm import AlarmTable, AlarmDistribution, User, UserSubscription
 from src.utils.logger import get_logger
+from src.utils.database import get_date_trunc_func, get_database_type_from_url
+from src.core.config import settings
 
 logger = get_logger(__name__)
 
@@ -331,15 +333,8 @@ class AlarmAggregator:
         
     async def _get_timeline_data(self, session: AsyncSession, start_time: datetime, interval: str) -> List[Dict[str, Any]]:
         """获取时间线数据"""
-        # SQLite兼容的时间截断函数
-        if interval == "1h":
-            # 按小时截断 - SQLite方式
-            trunc_func = func.strftime('%Y-%m-%d %H:00:00', AlarmTable.created_at)
-        elif interval == "1d":
-            # 按天截断 - SQLite方式  
-            trunc_func = func.strftime('%Y-%m-%d 00:00:00', AlarmTable.created_at)
-        else:
-            trunc_func = func.strftime('%Y-%m-%d %H:00:00', AlarmTable.created_at)
+        # 数据库兼容的时间截断函数
+        trunc_func = get_date_trunc_func(engine, AlarmTable.created_at, interval)
             
         result = await session.execute(
             select(
@@ -360,12 +355,8 @@ class AlarmAggregator:
         
     async def _get_severity_trends(self, session: AsyncSession, start_time: datetime, interval: str) -> List[Dict[str, Any]]:
         """获取严重程度趋势"""
-        if interval == "1h":
-            trunc_func = func.strftime('%Y-%m-%d %H:00:00', AlarmTable.created_at)
-        elif interval == "1d":
-            trunc_func = func.strftime('%Y-%m-%d 00:00:00', AlarmTable.created_at)
-        else:
-            trunc_func = func.strftime('%Y-%m-%d %H:00:00', AlarmTable.created_at)
+        # 数据库兼容的时间截断函数
+        trunc_func = get_date_trunc_func(engine, AlarmTable.created_at, interval)
             
         result = await session.execute(
             select(
@@ -408,12 +399,8 @@ class AlarmAggregator:
             return []
             
         # SQLite兼容的时间截断函数
-        if interval == "1h":
-            trunc_func = func.strftime('%Y-%m-%d %H:00:00', AlarmTable.created_at)
-        elif interval == "1d":
-            trunc_func = func.strftime('%Y-%m-%d 00:00:00', AlarmTable.created_at)
-        else:
-            trunc_func = func.strftime('%Y-%m-%d %H:00:00', AlarmTable.created_at)
+        # 数据库兼容的时间截断函数
+        trunc_func = get_date_trunc_func(engine, AlarmTable.created_at, interval)
             
         result = await session.execute(
             select(

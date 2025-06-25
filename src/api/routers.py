@@ -34,13 +34,13 @@ from src.services.user_manager import UserManager
 from src.services.system_manager import SystemManager
 from src.services.rule_engine import RuleEngine
 from src.services.aggregator import AlarmAggregator
+from src.api.auth import get_current_user, get_current_admin_user
 
 alarm_router = APIRouter()
 dashboard_router = APIRouter()
 config_router = APIRouter()
 endpoint_router = APIRouter()
 user_router = APIRouter()
-system_router = APIRouter()
 rule_router = APIRouter()
 analytics_router = APIRouter()
 websocket_router = APIRouter()
@@ -209,7 +209,8 @@ async def get_alarm(alarm_id: int, db: AsyncSession = Depends(get_db_session)):
 async def update_alarm(
     alarm_id: int,
     alarm_update: AlarmUpdate,
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user)
 ):
     """更新告警"""
     result = await db.execute(select(AlarmTable).where(AlarmTable.id == alarm_id))
@@ -237,7 +238,11 @@ async def update_alarm(
 
 
 @alarm_router.delete("/{alarm_id}")
-async def delete_alarm(alarm_id: int, db: AsyncSession = Depends(get_db_session)):
+async def delete_alarm(
+    alarm_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    current_admin: User = Depends(get_current_admin_user)
+):
     """删除告警"""
     result = await db.execute(select(AlarmTable).where(AlarmTable.id == alarm_id))
     alarm = result.scalars().first()
@@ -252,7 +257,11 @@ async def delete_alarm(alarm_id: int, db: AsyncSession = Depends(get_db_session)
 
 
 @alarm_router.post("/{alarm_id}/acknowledge", response_model=AlarmResponse)
-async def acknowledge_alarm(alarm_id: int, db: AsyncSession = Depends(get_db_session)):
+async def acknowledge_alarm(
+    alarm_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user)
+):
     """确认告警"""
     result = await db.execute(select(AlarmTable).where(AlarmTable.id == alarm_id))
     alarm = result.scalars().first()
@@ -272,7 +281,11 @@ async def acknowledge_alarm(alarm_id: int, db: AsyncSession = Depends(get_db_ses
 
 
 @alarm_router.post("/{alarm_id}/resolve", response_model=AlarmResponse)
-async def resolve_alarm(alarm_id: int, db: AsyncSession = Depends(get_db_session)):
+async def resolve_alarm(
+    alarm_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user)
+):
     """解决告警"""
     result = await db.execute(select(AlarmTable).where(AlarmTable.id == alarm_id))
     alarm = result.scalars().first()
@@ -294,7 +307,8 @@ async def resolve_alarm(alarm_id: int, db: AsyncSession = Depends(get_db_session
 @alarm_router.post("/batch")
 async def batch_operation(
     operation_data: Dict[str, Any] = Body(...),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user)
 ):
     """批量操作告警"""
     action = operation_data.get("action")
@@ -374,10 +388,11 @@ async def get_alarm_stats(
     )
 
 
-@alarm_router.post("/batch")
+@alarm_router.post("/batch/create")
 async def create_batch_alarms(
     alarms: List[AlarmCreate],
-    collector: AlarmCollector = Depends(get_collector)
+    collector: AlarmCollector = Depends(get_collector),
+    current_user: User = Depends(get_current_user)
 ):
     """批量创建告警"""
     success_count = 0
@@ -528,7 +543,10 @@ async def get_config():
 
 
 @config_router.put("/")
-async def update_config(config: Dict[str, Any] = Body(...)):
+async def update_config(
+    config: Dict[str, Any] = Body(...),
+    current_admin: User = Depends(get_current_admin_user)
+):
     """更新系统配置"""
     
     return {"message": "配置更新成功", "config": config}
@@ -538,7 +556,8 @@ async def update_config(config: Dict[str, Any] = Body(...)):
 @endpoint_router.post("/", response_model=EndpointResponse)
 async def create_endpoint(
     endpoint: EndpointCreate,
-    manager: EndpointManager = Depends(get_endpoint_manager)
+    manager: EndpointManager = Depends(get_endpoint_manager),
+    current_admin: User = Depends(get_current_admin_user)
 ):
     """创建接入点"""
     result = await manager.create_endpoint(endpoint.dict())
@@ -551,7 +570,8 @@ async def create_endpoint(
 async def list_endpoints(
     endpoint_type: Optional[str] = None,
     enabled: Optional[bool] = None,
-    manager: EndpointManager = Depends(get_endpoint_manager)
+    manager: EndpointManager = Depends(get_endpoint_manager),
+    current_user: User = Depends(get_current_user)
 ):
     """获取接入点列表"""
     return await manager.list_endpoints(endpoint_type, enabled)
@@ -560,7 +580,8 @@ async def list_endpoints(
 @endpoint_router.get("/{endpoint_id}", response_model=EndpointResponse)
 async def get_endpoint(
     endpoint_id: int,
-    manager: EndpointManager = Depends(get_endpoint_manager)
+    manager: EndpointManager = Depends(get_endpoint_manager),
+    current_user: User = Depends(get_current_user)
 ):
     """获取接入点详情"""
     result = await manager.get_endpoint(endpoint_id)
@@ -573,7 +594,8 @@ async def get_endpoint(
 async def update_endpoint(
     endpoint_id: int,
     endpoint_update: EndpointUpdate,
-    manager: EndpointManager = Depends(get_endpoint_manager)
+    manager: EndpointManager = Depends(get_endpoint_manager),
+    current_admin: User = Depends(get_current_admin_user)
 ):
     """更新接入点"""
     result = await manager.update_endpoint(endpoint_id, endpoint_update.dict(exclude_unset=True))
@@ -585,7 +607,8 @@ async def update_endpoint(
 @endpoint_router.delete("/{endpoint_id}")
 async def delete_endpoint(
     endpoint_id: int,
-    manager: EndpointManager = Depends(get_endpoint_manager)
+    manager: EndpointManager = Depends(get_endpoint_manager),
+    current_admin: User = Depends(get_current_admin_user)
 ):
     """删除接入点"""
     success = await manager.delete_endpoint(endpoint_id)
@@ -597,7 +620,8 @@ async def delete_endpoint(
 @endpoint_router.post("/{endpoint_id}/test")
 async def test_endpoint(
     endpoint_id: int,
-    manager: EndpointManager = Depends(get_endpoint_manager)
+    manager: EndpointManager = Depends(get_endpoint_manager),
+    current_admin: User = Depends(get_current_admin_user)
 ):
     """测试接入点"""
     result = await manager.test_endpoint(endpoint_id)
@@ -607,7 +631,8 @@ async def test_endpoint(
 @endpoint_router.get("/{endpoint_id}/stats")
 async def get_endpoint_stats(
     endpoint_id: int,
-    manager: EndpointManager = Depends(get_endpoint_manager)
+    manager: EndpointManager = Depends(get_endpoint_manager),
+    current_user: User = Depends(get_current_user)
 ):
     """获取接入点统计"""
     return await manager.get_endpoint_stats(endpoint_id)
@@ -617,7 +642,8 @@ async def get_endpoint_stats(
 @user_router.post("/", response_model=UserResponse)
 async def create_user(
     user: UserCreate,
-    manager: UserManager = Depends(get_user_manager)
+    manager: UserManager = Depends(get_user_manager),
+    current_admin: User = Depends(get_current_admin_user)
 ):
     """创建用户"""
     result = await manager.create_user(user.dict())
@@ -631,7 +657,8 @@ async def list_users(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     active_only: bool = False,
-    manager: UserManager = Depends(get_user_manager)
+    manager: UserManager = Depends(get_user_manager),
+    current_admin: User = Depends(get_current_admin_user)
 ):
     """获取用户列表"""
     return await manager.list_users(skip, limit, active_only)
@@ -640,7 +667,8 @@ async def list_users(
 @user_router.get("/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: int,
-    manager: UserManager = Depends(get_user_manager)
+    manager: UserManager = Depends(get_user_manager),
+    current_user: User = Depends(get_current_user)
 ):
     """获取用户详情"""
     result = await manager.get_user(user_id)
@@ -653,7 +681,8 @@ async def get_user(
 async def update_user(
     user_id: int,
     user_update: UserUpdate,
-    manager: UserManager = Depends(get_user_manager)
+    manager: UserManager = Depends(get_user_manager),
+    current_admin: User = Depends(get_current_admin_user)
 ):
     """更新用户"""
     result = await manager.update_user(user_id, user_update.dict(exclude_unset=True))
@@ -665,7 +694,8 @@ async def update_user(
 @user_router.delete("/{user_id}")
 async def delete_user(
     user_id: int,
-    manager: UserManager = Depends(get_user_manager)
+    manager: UserManager = Depends(get_user_manager),
+    current_admin: User = Depends(get_current_admin_user)
 ):
     """删除用户"""
     success = await manager.delete_user(user_id)
@@ -706,7 +736,8 @@ async def logout_user(
 async def create_subscription(
     user_id: int,
     subscription: SubscriptionCreate,
-    manager: UserManager = Depends(get_user_manager)
+    manager: UserManager = Depends(get_user_manager),
+    current_user: User = Depends(get_current_user)
 ):
     """创建用户订阅"""
     result = await manager.create_subscription(user_id, subscription.dict())
@@ -718,7 +749,8 @@ async def create_subscription(
 @user_router.get("/{user_id}/subscriptions", response_model=List[SubscriptionResponse])
 async def get_user_subscriptions(
     user_id: int,
-    manager: UserManager = Depends(get_user_manager)
+    manager: UserManager = Depends(get_user_manager),
+    current_user: User = Depends(get_current_user)
 ):
     """获取用户订阅列表"""
     return await manager.get_user_subscriptions(user_id)
@@ -727,7 +759,8 @@ async def get_user_subscriptions(
 @user_router.get("/{user_id}/systems", response_model=List[SystemResponse])
 async def get_user_systems(
     user_id: int,
-    manager: UserManager = Depends(get_user_manager)
+    manager: UserManager = Depends(get_user_manager),
+    current_user: User = Depends(get_current_user)
 ):
     """获取用户关联的系统列表"""
     try:
@@ -743,7 +776,8 @@ async def get_user_systems(
 @rule_router.post("/groups")
 async def create_rule_group(
     group_data: Dict[str, Any] = Body(...),
-    engine: RuleEngine = Depends(get_rule_engine)
+    engine: RuleEngine = Depends(get_rule_engine),
+    current_admin: User = Depends(get_current_admin_user)
 ):
     """创建规则组"""
     result = await engine.create_rule_group(group_data)
@@ -755,7 +789,8 @@ async def create_rule_group(
 @rule_router.post("/rules")
 async def create_distribution_rule(
     rule_data: Dict[str, Any] = Body(...),
-    engine: RuleEngine = Depends(get_rule_engine)
+    engine: RuleEngine = Depends(get_rule_engine),
+    current_admin: User = Depends(get_current_admin_user)
 ):
     """创建分发规则"""
     result = await engine.create_distribution_rule(rule_data)
@@ -827,7 +862,8 @@ async def get_correlation_analysis(
 
 @analytics_router.post("/cache/clear")
 async def clear_analytics_cache(
-    aggregator: AlarmAggregator = Depends(get_aggregator)
+    aggregator: AlarmAggregator = Depends(get_aggregator),
+    current_admin: User = Depends(get_current_admin_user)
 ):
     """清除分析缓存"""
     await aggregator.clear_cache()
@@ -986,108 +1022,3 @@ async def receive_batch_webhook_alarms(
     except Exception as e:
         logger.error(f"Failed to receive batch webhook alarms: {str(e)}")
         raise HTTPException(status_code=500, detail="内部服务器错误")
-
-
-# 系统管理路由
-@system_router.post("/", response_model=SystemResponse)
-async def create_system(
-    system: SystemCreate,
-    manager: SystemManager = Depends(get_system_manager)
-):
-    """创建系统"""
-    result = await manager.create_system(system.dict())
-    if not result:
-        raise HTTPException(status_code=500, detail="创建系统失败")
-    return result
-
-
-@system_router.get("/", response_model=List[SystemResponse])
-async def list_systems(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    enabled_only: bool = False,
-    manager: SystemManager = Depends(get_system_manager)
-):
-    """获取系统列表"""
-    return await manager.list_systems(skip, limit, enabled_only)
-
-
-@system_router.get("/{system_id}", response_model=SystemResponse)
-async def get_system(
-    system_id: int,
-    manager: SystemManager = Depends(get_system_manager)
-):
-    """获取系统详情"""
-    result = await manager.get_system(system_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="系统不存在")
-    return result
-
-
-@system_router.put("/{system_id}", response_model=SystemResponse)
-async def update_system(
-    system_id: int,
-    system_update: SystemUpdate,
-    manager: SystemManager = Depends(get_system_manager)
-):
-    """更新系统"""
-    result = await manager.update_system(system_id, system_update.dict(exclude_unset=True))
-    if not result:
-        raise HTTPException(status_code=404, detail="系统不存在")
-    return result
-
-
-@system_router.delete("/{system_id}")
-async def delete_system(
-    system_id: int,
-    manager: SystemManager = Depends(get_system_manager)
-):
-    """删除系统"""
-    success = await manager.delete_system(system_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="系统不存在")
-    return {"message": "系统删除成功"}
-
-
-@system_router.post("/{system_id}/users/{user_id}")
-async def add_user_to_system(
-    system_id: int,
-    user_id: int,
-    manager: SystemManager = Depends(get_system_manager)
-):
-    """将用户添加到系统"""
-    success = await manager.add_user_to_system(user_id, system_id)
-    if not success:
-        raise HTTPException(status_code=400, detail="添加用户到系统失败")
-    return {"message": "用户添加成功"}
-
-
-@system_router.delete("/{system_id}/users/{user_id}")
-async def remove_user_from_system(
-    system_id: int,
-    user_id: int,
-    manager: SystemManager = Depends(get_system_manager)
-):
-    """从系统中移除用户"""
-    success = await manager.remove_user_from_system(user_id, system_id)
-    if not success:
-        raise HTTPException(status_code=400, detail="移除用户失败")
-    return {"message": "用户移除成功"}
-
-
-@system_router.get("/{system_id}/users", response_model=List[UserResponse])
-async def get_system_users(
-    system_id: int,
-    manager: SystemManager = Depends(get_system_manager)
-):
-    """获取系统用户列表"""
-    return await manager.get_system_users(system_id)
-
-
-@system_router.get("/{system_id}/stats")
-async def get_system_stats(
-    system_id: int,
-    manager: SystemManager = Depends(get_system_manager)
-):
-    """获取系统统计信息"""
-    return await manager.get_system_stats(system_id)

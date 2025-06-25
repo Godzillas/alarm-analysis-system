@@ -105,6 +105,15 @@ class ConnectionManager:
         }
         await self.broadcast_to_room(message, "dashboard")
         
+    async def send_alarm_notification(self, alarm_data: dict):
+        """发送告警通知"""
+        message = {
+            "type": "alarm_notification",
+            "data": alarm_data,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        await self.broadcast_to_room(message, "alarms")
+        
     async def send_system_notification(self, notification: dict):
         """发送系统通知"""
         message = {

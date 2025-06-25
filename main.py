@@ -24,6 +24,7 @@ from src.api.routers import (
 from src.api.system import router as system_router
 from src.api.contact_point import router as contact_point_router
 from src.api.alert_template import router as alert_template_router
+from src.api.auth import router as auth_router
 from src.core.config import settings
 from src.core.database import init_db
 from src.services.collector import AlarmCollector
@@ -87,6 +88,7 @@ else:
     # 回退到原始静态文件
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
+app.include_router(auth_router, prefix="/api/auth", tags=["用户认证"])
 app.include_router(alarm_router, prefix="/api/alarms", tags=["告警管理"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["仪表板"])
 app.include_router(config_router, prefix="/api/config", tags=["配置管理"])
@@ -99,6 +101,65 @@ app.include_router(contact_point_router, prefix="/api/contact-points", tags=["�
 app.include_router(alert_template_router, prefix="/api/alert-templates", tags=["告警模板管理"])
 app.include_router(websocket_router, prefix="/ws", tags=["WebSocket"])
 app.include_router(webhook_router, prefix="/api/webhook", tags=["Webhook接收"])
+
+
+# SPA路由fallback - 必须在所有API路由之后定义
+@app.get("/{full_path:path}", response_class=HTMLResponse)
+async def spa_fallback(full_path: str):
+    """
+    SPA路由fallback处理器
+    当访问非API路径且文件不存在时，返回index.html让前端路由处理
+    """
+    # 如果是API路径，不处理（让FastAPI返回404）
+    if full_path.startswith("api/"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Not Found")
+    
+    # 如果是WebSocket路径，不处理
+    if full_path.startswith("ws/"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Not Found")
+    
+    # 处理静态文件路径的特殊情况：/static/dist/users 应该重定向到前端路由
+    if full_path.startswith("static/dist/") and not full_path.endswith(('.html', '.js', '.css', '.ico', '.png', '.jpg', '.svg')):
+        # 提取前端路由部分，例如 static/dist/users -> users
+        frontend_route = full_path.replace("static/dist/", "")
+        # 重定向到正确的前端路由
+        vue_index_path = "static/dist/index.html"
+        if os.path.exists(vue_index_path):
+            return FileResponse(vue_index_path)
+    
+    # 如果是普通静态文件路径，检查文件是否存在
+    if full_path.startswith("static/"):
+        static_file_path = full_path
+        if os.path.exists(static_file_path):
+            return FileResponse(static_file_path)
+        else:
+            # 静态文件不存在，返回404
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Static file not found")
+    
+    # 对于其他所有路径（前端路由），返回index.html
+    vue_index_path = "static/dist/index.html"
+    if os.path.exists(vue_index_path):
+        return FileResponse(vue_index_path)
+    
+    # 如果index.html不存在，返回简单页面
+    return """
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+        <title>告警分析系统</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    </head>
+    <body>
+        <h1>告警分析系统</h1>
+        <p>前端页面尚未构建，请运行构建命令。</p>
+        <a href="/docs">查看API文档</a>
+    </body>
+    </html>
+    """
 
 
 @app.get("/", response_class=HTMLResponse)

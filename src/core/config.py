@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     PORT: int = 8000
     
     # 数据库配置
-    DATABASE_URL: str = "sqlite:///./alarm_system.db"
+    DATABASE_URL: str = "mysql+aiomysql://root:@localhost:3306/alarm_system"
     
     # Redis配置
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     WEBHOOK_ENABLED: bool = False
     
     # 安全配置
-    SECRET_KEY: str = "your-secret-key-here"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    SECRET_KEY: str = "alarm-system-secret-key-2024-change-in-production"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     
     class Config:
         env_file = ".env"

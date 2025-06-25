@@ -5,7 +5,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, or_, case
 from sqlalchemy.orm import selectinload
 
 from src.core.database import get_db_session
@@ -426,8 +426,8 @@ async def get_system_stats(
         alarm_stats = await db.execute(
             select(
                 func.count(AlarmTable.id).label('total_alarms'),
-                func.sum(func.case((AlarmTable.status == 'active', 1), else_=0)).label('active_alarms'),
-                func.sum(func.case((AlarmTable.severity == 'critical', 1), else_=0)).label('critical_alarms')
+                func.sum(case((AlarmTable.status == 'active', 1), else_=0)).label('active_alarms'),
+                func.sum(case((AlarmTable.severity == 'critical', 1), else_=0)).label('critical_alarms')
             ).where(AlarmTable.system_id == system_id)
         )
         alarm_result = alarm_stats.first()
@@ -437,7 +437,7 @@ async def get_system_stats(
         endpoint_stats = await db.execute(
             select(
                 func.count(Endpoint.id).label('total_endpoints'),
-                func.sum(func.case((Endpoint.enabled == True, 1), else_=0)).label('active_endpoints')
+                func.sum(case((Endpoint.enabled == True, 1), else_=0)).label('active_endpoints')
             ).where(Endpoint.system_id == system_id)
         )
         endpoint_result = endpoint_stats.first()

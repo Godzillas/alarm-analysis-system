@@ -220,7 +220,7 @@ class AlarmAnalyzer:
                 result = await session.execute(
                     select(
                         func.count(AlarmTable.id).label('total'),
-                        func.sum(case([(AlarmTable.is_duplicate == True, 1)], else_=0)).label('duplicates'),
+                        func.sum(case((AlarmTable.is_duplicate == True, 1), else_=0)).label('duplicates'),
                         func.count(func.distinct(AlarmTable.correlation_id)).label('correlations')
                     ).where(
                         AlarmTable.created_at >= datetime.utcnow() - timedelta(hours=24)

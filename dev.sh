@@ -53,6 +53,13 @@ else
     exit 1
 fi
 
+# 清理端口8000上的进程
+echo "🧹 清理端口8000上的进程..."
+if lsof -t -i:8000 > /dev/null 2>&1; then
+    lsof -ti:8000 | xargs kill -9 > /dev/null 2>&1
+    echo "✅ 已清理端口8000上的进程"
+fi
+
 # 启动后端
 cd "$PROJECT_DIR"
 echo "🔥 启动后端服务..."
