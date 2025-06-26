@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, FileResponse
 from contextlib import asynccontextmanager
 import os
 from src.core.logging import setup_logging, get_logger
+from src.core.middleware import ErrorHandlerMiddleware, LoggingMiddleware, SecurityHeadersMiddleware
 
 # 全局服务实例
 _global_collector = None
@@ -27,6 +28,16 @@ from src.api.contact_point import router as contact_point_router
 from src.api.alert_template import router as alert_template_router
 from src.api.oncall import router as oncall_router
 from src.api.auth import router as auth_router
+from src.api.deduplication import router as deduplication_router
+from src.api.health import router as health_router
+from src.api.alarm_processing import router as alarm_processing_router
+from src.api.solutions import router as solutions_router
+from src.api.subscriptions import router as subscriptions_router
+from src.api.data_lifecycle import router as data_lifecycle_router
+from src.api.rbac import router as rbac_router
+from src.api.alarms_rbac_example import router as alarms_rbac_router
+from src.api.noise_reduction import router as noise_reduction_router
+from src.api.suppression import router as suppression_router
 from src.core.config import settings
 from src.core.database import init_db
 from src.services.collector import AlarmCollector
@@ -71,6 +82,23 @@ async def lifespan(app: FastAPI):
         await escalation_engine.start()
         logger.info("✅ 告警升级引擎启动完成")
         
+        # 启动去重引擎
+        from src.services.deduplication_engine import initialize_deduplication_engine
+        await initialize_deduplication_engine()
+        logger.info("✅ 告警去重引擎启动完成")
+        
+        # 启动通知引擎
+        from src.services.notification_engine import start_notification_engine
+        await start_notification_engine()
+        logger.info("✅ 通知发送引擎启动完成")
+        
+        # 加载抑制规则缓存
+        from src.services.suppression_service import suppression_service
+        from src.core.database import async_session_maker
+        async with async_session_maker() as db:
+            await suppression_service.load_active_suppressions(db)
+        logger.info("✅ 抑制规则缓存加载完成")
+        
         logger.info("🎉 告警分析系统启动成功")
         
         yield
@@ -92,6 +120,10 @@ async def lifespan(app: FastAPI):
         from src.services.escalation_engine import escalation_engine
         await escalation_engine.stop()
         
+        # 停止通知引擎
+        from src.services.notification_engine import stop_notification_engine
+        await stop_notification_engine()
+        
         logger.info("👋 告警分析系统已关闭")
 
 
@@ -112,10 +144,27 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# 添加中间件（注意顺序：最后添加的最先执行）
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(LoggingMiddleware)
+app.add_middleware(ErrorHandlerMiddleware)
+
+# 创建自定义静态文件处理器
+class SPAStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except:
+            # 如果文件不存在且不是真实的静态文件，返回index.html
+            if not path.endswith(('.html', '.js', '.css', '.ico', '.png', '.jpg', '.svg', '.woff', '.woff2', '.ttf', '.eot', '.json', '.txt')):
+                index_path = "index.html"
+                return await super().get_response(index_path, scope)
+            raise
+
 # 挂载静态文件
 if os.path.exists("static/dist"):
-    # Vue.js构建的静态文件
-    app.mount("/static/dist", StaticFiles(directory="static/dist"), name="vue-static")
+    # Vue.js构建的静态文件 - 使用自定义处理器支持SPA路由
+    app.mount("/static/dist", SPAStaticFiles(directory="static/dist"), name="vue-static")
     # 原始静态文件(兼容性)
     app.mount("/static", StaticFiles(directory="static"), name="static")
 else:
@@ -130,12 +179,22 @@ app.include_router(endpoint_router, prefix="/api/endpoints", tags=["接入点管
 app.include_router(user_router, prefix="/api/users", tags=["用户管理"])
 app.include_router(rule_router, prefix="/api/rules", tags=["规则管理"])
 app.include_router(analytics_router, prefix="/api/analytics", tags=["分析统计"])
+app.include_router(deduplication_router, prefix="/api/deduplication", tags=["告警去重"])
 app.include_router(system_router, prefix="/api/systems", tags=["系统管理"])
 app.include_router(contact_point_router, prefix="/api/contact-points", tags=["联络点管理"])
 app.include_router(alert_template_router, prefix="/api/alert-templates", tags=["告警模板管理"])
 app.include_router(oncall_router, tags=["值班管理"])
 app.include_router(websocket_router, prefix="/ws", tags=["WebSocket"])
 app.include_router(webhook_router, prefix="/api/webhook", tags=["Webhook接收"])
+app.include_router(health_router, tags=["系统监控"])
+app.include_router(alarm_processing_router, prefix="/api", tags=["告警处理"])
+app.include_router(solutions_router, prefix="/api", tags=["解决方案管理"])
+app.include_router(subscriptions_router, prefix="/api", tags=["告警订阅"])
+app.include_router(data_lifecycle_router, tags=["数据生命周期管理"])
+app.include_router(rbac_router, tags=["权限管理"])
+app.include_router(alarms_rbac_router, tags=["告警管理(RBAC示例)"])
+app.include_router(noise_reduction_router, tags=["告警降噪"])
+app.include_router(suppression_router, prefix="/api", tags=["告警抑制"])
 
 
 # SPA路由fallback - 必须在所有API路由之后定义
@@ -155,22 +214,36 @@ async def spa_fallback(full_path: str):
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Not Found")
     
-    # 处理静态文件路径的特殊情况：/static/dist/users 应该重定向到前端路由
-    if full_path.startswith("static/dist/") and not full_path.endswith(('.html', '.js', '.css', '.ico', '.png', '.jpg', '.svg')):
-        # 提取前端路由部分，例如 static/dist/users -> users
-        frontend_route = full_path.replace("static/dist/", "")
-        # 重定向到正确的前端路由
-        vue_index_path = "static/dist/index.html"
-        if os.path.exists(vue_index_path):
-            return FileResponse(vue_index_path)
-    
-    # 如果是普通静态文件路径，检查文件是否存在
+    # 处理静态文件路径
     if full_path.startswith("static/"):
         static_file_path = full_path
         if os.path.exists(static_file_path):
+            # 文件存在，直接返回
             return FileResponse(static_file_path)
+        elif full_path.startswith("static/dist/") and not full_path.endswith(('.html', '.js', '.css', '.ico', '.png', '.jpg', '.svg', '.woff', '.woff2', '.ttf', '.eot')):
+            # 这是前端路由（如 static/dist/dashboard），返回 index.html
+            vue_index_path = "static/dist/index.html"
+            if os.path.exists(vue_index_path):
+                return FileResponse(vue_index_path, media_type="text/html")
+            else:
+                # index.html 不存在，返回简单页面
+                return """
+                <!DOCTYPE html>
+                <html lang="zh-CN">
+                <head>
+                    <title>告警分析系统</title>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                </head>
+                <body>
+                    <h1>告警分析系统</h1>
+                    <p>前端页面尚未构建，请运行构建命令。</p>
+                    <a href="/docs">查看API文档</a>
+                </body>
+                </html>
+                """
         else:
-            # 静态文件不存在，返回404
+            # 其他静态文件不存在，返回404
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Static file not found")
     

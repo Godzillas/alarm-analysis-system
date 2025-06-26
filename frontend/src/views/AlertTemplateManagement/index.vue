@@ -26,7 +26,8 @@
         <el-input
           v-model="searchQuery"
           placeholder="搜索模板名称或描述"
-          style="width: 300px; margin-right: 10px"
+          class="el-input--xl"
+          style="margin-right: 10px"
           @input="handleSearch"
         >
           <template #prefix>
@@ -37,7 +38,8 @@
           v-model="filterType"
           placeholder="类型筛选"
           clearable
-          style="width: 120px; margin-right: 10px"
+          class="el-select--sm"
+          style="margin-right: 10px"
           @change="handleFilter"
         >
           <el-option
@@ -51,7 +53,7 @@
           v-model="filterCategory"
           placeholder="分类筛选"
           clearable
-          style="width: 120px"
+          class="el-select--sm"
           @change="handleFilter"
         >
           <el-option

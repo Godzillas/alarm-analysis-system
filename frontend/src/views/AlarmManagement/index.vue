@@ -12,13 +12,14 @@
       
       <!-- 筛选器 -->
       <div class="filters">
-        <el-form :model="filters" inline>
+        <el-form :model="filters" inline class="filter-form">
           <el-form-item label="所属系统">
             <el-select 
               v-model="filters.system_id" 
               placeholder="全部系统" 
               clearable 
               filterable
+              class="el-select--system"
               :loading="systemStore.loading"
               loading-text="加载系统列表中..."
               no-data-text="暂无可用系统"
@@ -33,7 +34,13 @@
           </el-form-item>
           
           <el-form-item label="严重程度">
-            <el-select v-model="filters.severity" placeholder="全部" clearable>
+            <el-select 
+              v-model="filters.severity" 
+              placeholder="全部" 
+              clearable
+              class="el-select--severity"
+              @change="handleSeverityChange"
+            >
               <el-option label="严重" value="critical" />
               <el-option label="高" value="high" />
               <el-option label="中" value="medium" />
@@ -42,7 +49,13 @@
           </el-form-item>
           
           <el-form-item label="状态">
-            <el-select v-model="filters.status" placeholder="全部" clearable>
+            <el-select 
+              v-model="filters.status" 
+              placeholder="全部" 
+              clearable
+              class="el-select--status"
+              @change="handleStatusChange"
+            >
               <el-option label="活跃" value="active" />
               <el-option label="已确认" value="acknowledged" />
               <el-option label="已解决" value="resolved" />
@@ -54,6 +67,8 @@
               v-model="filters.search" 
               placeholder="搜索告警标题..."
               clearable
+              class="el-input--search"
+              @input="handleSearchInput"
             />
           </el-form-item>
           
@@ -307,8 +322,8 @@ const selectedAlarm = ref(null)
 
 const filters = reactive({
   system_id: null,
-  severity: '',
-  status: '',
+  severity: null,
+  status: null,
   search: ''
 })
 
@@ -362,12 +377,37 @@ const handleSearch = () => {
 const handleReset = () => {
   Object.assign(filters, {
     system_id: null,
-    severity: '',
-    status: '',
+    severity: null,
+    status: null,
     search: ''
   })
   alarmStore.clearFilters()
   alarmStore.fetchAlarms()
+}
+
+const handleStatusChange = (value) => {
+  console.log('状态筛选值变化:', value)
+  filters.status = value
+  alarmStore.setFilters({ status: value })
+  alarmStore.fetchAlarms()
+}
+
+const handleSeverityChange = (value) => {
+  console.log('严重程度筛选值变化:', value)
+  filters.severity = value
+  alarmStore.setFilters({ severity: value })
+  alarmStore.fetchAlarms()
+}
+
+const handleSearchInput = (value) => {
+  // 防抖处理，避免频繁搜索
+  if (filters.searchTimer) {
+    clearTimeout(filters.searchTimer)
+  }
+  filters.searchTimer = setTimeout(() => {
+    alarmStore.setFilters({ search: value })
+    alarmStore.fetchAlarms()
+  }, 500)
 }
 
 const refreshData = async () => {
@@ -461,19 +501,9 @@ const loadAvailableSystems = async () => {
   }
 }
 
-// 监听筛选器变化，实时搜索
-watch(() => filters.severity, (newVal) => {
-  alarmStore.setFilters({ severity: newVal })
-  alarmStore.fetchAlarms()
-})
-
+// 监听系统ID变化，实时搜索
 watch(() => filters.system_id, (newVal) => {
   alarmStore.setFilters({ system_id: newVal })
-  alarmStore.fetchAlarms()
-})
-
-watch(() => filters.status, (newVal) => {
-  alarmStore.setFilters({ status: newVal })
   alarmStore.fetchAlarms()
 })
 

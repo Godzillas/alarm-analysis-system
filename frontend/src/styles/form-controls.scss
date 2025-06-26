@@ -1,0 +1,116 @@
+// 表单控件标准宽度定义
+// 遵循Element Plus设计规范和用户体验最佳实践
+
+:root {
+  // 下拉框标准宽度
+  --el-select-width-xs: 80px;    // 超小: 状态、优先级等
+  --el-select-width-sm: 120px;   // 小: 严重程度、类型等
+  --el-select-width-md: 160px;   // 中: 一般选择器
+  --el-select-width-lg: 200px;   // 大: 系统、用户等带描述的选项
+  --el-select-width-xl: 240px;   // 超大: 长文本选项
+  
+  // 输入框标准宽度
+  --el-input-width-xs: 80px;
+  --el-input-width-sm: 120px;
+  --el-input-width-md: 200px;
+  --el-input-width-lg: 280px;
+  --el-input-width-xl: 360px;
+  
+  // 日期选择器宽度
+  --el-datepicker-width: 180px;
+  --el-daterange-width: 240px;
+}
+
+// 表单控件通用类
+.form-control {
+  &--xs { width: var(--el-select-width-xs) !important; }
+  &--sm { width: var(--el-select-width-sm) !important; }
+  &--md { width: var(--el-select-width-md) !important; }
+  &--lg { width: var(--el-select-width-lg) !important; }
+  &--xl { width: var(--el-select-width-xl) !important; }
+}
+
+// 下拉框专用类
+.el-select {
+  &--xs { width: var(--el-select-width-xs) !important; }
+  &--sm { width: var(--el-select-width-sm) !important; }
+  &--md { width: var(--el-select-width-md) !important; }
+  &--lg { width: var(--el-select-width-lg) !important; }
+  &--xl { width: var(--el-select-width-xl) !important; }
+  
+  // 语义化类名
+  &--status { width: var(--el-select-width-sm) !important; }
+  &--severity { width: var(--el-select-width-sm) !important; }
+  &--type { width: var(--el-select-width-md) !important; }
+  &--system { width: var(--el-select-width-lg) !important; }
+  &--user { width: var(--el-select-width-lg) !important; }
+}
+
+// 输入框专用类
+.el-input {
+  &--xs { width: var(--el-input-width-xs) !important; }
+  &--sm { width: var(--el-input-width-sm) !important; }
+  &--md { width: var(--el-input-width-md) !important; }
+  &--lg { width: var(--el-input-width-lg) !important; }
+  &--xl { width: var(--el-input-width-xl) !important; }
+  
+  // 语义化类名
+  &--search { width: var(--el-input-width-md) !important; }
+  &--name { width: var(--el-input-width-lg) !important; }
+  &--url { width: var(--el-input-width-xl) !important; }
+}
+
+// 日期选择器
+.el-date-editor {
+  &--date { width: var(--el-datepicker-width) !important; }
+  &--daterange { width: var(--el-daterange-width) !important; }
+}
+
+// 筛选表单特殊样式
+.filter-form {
+  .el-form-item {
+    margin-right: 16px;
+    margin-bottom: 12px;
+    
+    .el-form-item__label {
+      width: auto !important;
+      margin-right: 8px;
+      font-weight: 500;
+      color: var(--el-text-color-regular);
+    }
+  }
+  
+  // 确保表单项在小屏幕上正确换行
+  @media (max-width: 768px) {
+    .el-form-item {
+      margin-right: 8px;
+      margin-bottom: 8px;
+      
+      .el-select,
+      .el-input {
+        min-width: 120px;
+      }
+    }
+  }
+}
+
+// 响应式调整
+@media (max-width: 1200px) {
+  :root {
+    --el-select-width-lg: 180px;
+    --el-select-width-xl: 220px;
+    --el-input-width-lg: 240px;
+    --el-input-width-xl: 320px;
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --el-select-width-md: 140px;
+    --el-select-width-lg: 160px;
+    --el-select-width-xl: 180px;
+    --el-input-width-md: 160px;
+    --el-input-width-lg: 200px;
+    --el-input-width-xl: 240px;
+  }
+}

@@ -13,22 +13,22 @@
 
       <!-- 搜索筛选 -->
       <div class="filters">
-        <el-form :model="filters" inline>
+        <el-form :model="filters" inline class="filter-form">
           <el-form-item label="用户名">
-            <el-input v-model="filters.username" placeholder="搜索用户名..." clearable />
+            <el-input v-model="filters.username" placeholder="搜索用户名..." clearable class="el-input--md" />
           </el-form-item>
           <el-form-item label="邮箱">
-            <el-input v-model="filters.email" placeholder="搜索邮箱..." clearable />
+            <el-input v-model="filters.email" placeholder="搜索邮箱..." clearable class="el-input--lg" />
           </el-form-item>
           <el-form-item label="角色">
-            <el-select v-model="filters.role" placeholder="全部角色" clearable>
+            <el-select v-model="filters.role" placeholder="全部角色" clearable class="el-select--sm">
               <el-option label="管理员" value="admin" />
               <el-option label="操作员" value="operator" />
               <el-option label="观察员" value="viewer" />
             </el-select>
           </el-form-item>
           <el-form-item label="状态">
-            <el-select v-model="filters.status" placeholder="全部状态" clearable>
+            <el-select v-model="filters.status" placeholder="全部状态" clearable class="el-select--status">
               <el-option label="激活" value="active" />
               <el-option label="禁用" value="disabled" />
             </el-select>

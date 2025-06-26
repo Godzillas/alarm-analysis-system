@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     NOTIFICATION_TIMEOUT: int = 30
     
     # 安全配置
-    SECRET_KEY: str = "alarm-system-secret-key-2024-change-in-production"
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "alarm-system-secret-key-2024-change-in-production")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     PASSWORD_MIN_LENGTH: int = 8
     MAX_LOGIN_ATTEMPTS: int = 5

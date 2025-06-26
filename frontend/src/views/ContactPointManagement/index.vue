@@ -19,9 +19,9 @@
 
       <!-- 筛选器 -->
       <div class="filters">
-        <el-form :model="filters" inline>
+        <el-form :model="filters" inline class="filter-form">
           <el-form-item label="所属系统">
-            <el-select v-model="filters.system_id" placeholder="全部系统" clearable filterable>
+            <el-select v-model="filters.system_id" placeholder="全部系统" clearable filterable class="el-select--system">
               <el-option
                 v-for="system in availableSystems"
                 :key="system.id"
@@ -32,7 +32,7 @@
           </el-form-item>
 
           <el-form-item label="联络点类型">
-            <el-select v-model="filters.contact_type" placeholder="全部类型" clearable>
+            <el-select v-model="filters.contact_type" placeholder="全部类型" clearable class="el-select--type">
               <el-option
                 v-for="type in contactPointStore.contactPointTypes"
                 :key="type.value"
@@ -43,7 +43,7 @@
           </el-form-item>
 
           <el-form-item label="状态">
-            <el-select v-model="filters.enabled" placeholder="全部状态" clearable>
+            <el-select v-model="filters.enabled" placeholder="全部状态" clearable class="el-select--status">
               <el-option label="启用" :value="true" />
               <el-option label="禁用" :value="false" />
             </el-select>
@@ -54,6 +54,7 @@
               v-model="filters.search" 
               placeholder="搜索联络点名称..."
               clearable
+              class="el-input--search"
               @keyup.enter="handleSearch"
             />
           </el-form-item>

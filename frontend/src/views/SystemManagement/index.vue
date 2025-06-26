@@ -15,18 +15,18 @@
       
       <!-- 筛选器 -->
       <div class="filters">
-        <el-form :model="filters" inline>
+        <el-form :model="filters" inline class="filter-form">
           <el-form-item label="搜索">
             <el-input 
               v-model="filters.search" 
               placeholder="搜索系统名称、编码..."
               clearable
-              style="width: 200px"
+              class="el-input--search"
             />
           </el-form-item>
           
           <el-form-item label="状态">
-            <el-select v-model="filters.enabled" placeholder="全部" clearable>
+            <el-select v-model="filters.enabled" placeholder="全部" clearable class="el-select--status">
               <el-option label="启用" :value="true" />
               <el-option label="禁用" :value="false" />
             </el-select>

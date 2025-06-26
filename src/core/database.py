@@ -6,7 +6,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import sessionmaker
 from src.core.config import settings
-from src.models.alarm import Base
+from sqlalchemy.ext.declarative import declarative_base
+
+# 创建Base类，避免循环导入
+Base = declarative_base()
 
 
 if settings.DATABASE_URL.startswith("sqlite"):

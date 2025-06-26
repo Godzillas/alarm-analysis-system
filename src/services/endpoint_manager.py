@@ -24,9 +24,7 @@ class EndpointManager:
     def __init__(self):
         self.active_endpoints: Dict[int, Dict] = {}
         self.endpoint_stats: Dict[int, Dict] = {}
-        # 创建一个异步任务来初始化已启用的接入点
-        import asyncio
-        asyncio.create_task(self._initialize_enabled_endpoints())
+        self._initialized = False
         
     async def _initialize_enabled_endpoints(self):
         """初始化已启用的接入点"""
@@ -350,9 +348,14 @@ class EndpointManager:
     async def process_incoming_alarm(self, endpoint_id: int, alarm_data: Dict[str, Any]) -> bool:
         """处理接入点接收的告警"""
         try:
+            # 如果接入点不在活跃列表中，尝试获取并激活
             if endpoint_id not in self.active_endpoints:
-                logger.warning(f"Received alarm from inactive endpoint: {endpoint_id}")
-                return False
+                endpoint = await self.get_endpoint(endpoint_id)
+                if not endpoint or not endpoint.enabled:
+                    logger.warning(f"Received alarm from inactive or disabled endpoint: {endpoint_id}")
+                    return False
+                # 激活接入点
+                await self._activate_endpoint(endpoint)
                 
             endpoint_info = self.active_endpoints[endpoint_id]
             endpoint = endpoint_info["endpoint"]

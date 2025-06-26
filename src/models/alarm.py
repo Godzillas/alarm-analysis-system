@@ -6,11 +6,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional, Dict, Any, List, Generic, TypeVar
 from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, JSON, Float, ForeignKey, Table
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from pydantic import BaseModel, Field
 
-Base = declarative_base()
+from src.core.database import Base
 
 # 用户-系统关联表
 user_system_association = Table(
@@ -20,6 +19,8 @@ user_system_association = Table(
     Column('system_id', Integer, ForeignKey('systems.id'), primary_key=True),
     Column('created_at', DateTime, default=datetime.utcnow)
 )
+
+# 用户角色关联表将在运行时动态配置，避免循环导入
 
 
 class AlarmSeverity(str, Enum):
@@ -280,6 +281,8 @@ class User(Base):
     
     # 系统关联
     systems = relationship("System", secondary=user_system_association, back_populates="users")
+    
+    # RBAC 角色关联将在 rbac.py 中定义以避免循环导入
 
 
 class UserSubscription(Base):

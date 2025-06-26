@@ -167,3 +167,16 @@ test_*.sh
 # 配置文件（包含敏感信息）
 config.local.py
 .env.local
+
+# Node.js / Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+frontend/dist/
+frontend/node_modules/
+
+# 开发和临时文件
+pip.conf
+crontab.example
+*.example
