@@ -3,7 +3,7 @@ import { ElMessage } from 'element-plus'
 
 // 创建axios实例
 const request = axios.create({
-  baseURL: '/api',
+  baseURL: window.location.protocol + '//' + window.location.host + '/api',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json'

@@ -163,6 +163,41 @@ class EndpointManager:
             logger.error(f"Failed to list endpoints: {str(e)}")
             return []
             
+    async def list_endpoints_paginated(self, endpoint_type: Optional[str] = None, enabled: Optional[bool] = None, skip: int = 0, limit: int = 20) -> tuple[List[Endpoint], int]:
+        """获取分页接入点列表"""
+        try:
+            async with async_session_maker() as session:
+                from sqlalchemy import func
+                
+                # 构建基础查询
+                base_query = select(Endpoint)
+                count_query = select(func.count(Endpoint.id))
+                
+                filters = []
+                if endpoint_type:
+                    filters.append(Endpoint.endpoint_type == endpoint_type)
+                if enabled is not None:
+                    filters.append(Endpoint.enabled == enabled)
+                    
+                if filters:
+                    base_query = base_query.where(and_(*filters))
+                    count_query = count_query.where(and_(*filters))
+                
+                # 获取总数
+                total_result = await session.execute(count_query)
+                total = total_result.scalar()
+                
+                # 获取分页数据
+                data_query = base_query.order_by(Endpoint.created_at.desc()).offset(skip).limit(limit)
+                result = await session.execute(data_query)
+                endpoints = result.scalars().all()
+                
+                return endpoints, total
+                
+        except Exception as e:
+            logger.error(f"Failed to list endpoints paginated: {str(e)}")
+            return [], 0
+            
     async def test_endpoint(self, endpoint_id: int) -> Dict[str, Any]:
         """测试接入点连接"""
         try:

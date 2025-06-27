@@ -560,13 +560,24 @@ async def create_endpoint(
     return result
 
 
-@endpoint_router.get("/", response_model=List[EndpointResponse])
+@endpoint_router.get("/", response_model=PaginatedResponse[EndpointResponse])
 async def list_endpoints(
     endpoint_type: Optional[str] = None,
     enabled: Optional[bool] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=1000),
     manager: EndpointManager = Depends(get_endpoint_manager)):
     """获取接入点列表"""
-    return await manager.list_endpoints(endpoint_type, enabled)
+    skip = (page - 1) * page_size
+    endpoints, total = await manager.list_endpoints_paginated(endpoint_type, enabled, skip, page_size)
+    
+    return PaginatedResponse(
+        data=endpoints,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=(total + page_size - 1) // page_size
+    )
 
 
 @endpoint_router.get("/{endpoint_id}", response_model=EndpointResponse)
@@ -1030,3 +1041,9 @@ async def receive_batch_webhook_alarms(
     except Exception as e:
         logger.error(f"Failed to receive batch webhook alarms: {str(e)}")
         raise HTTPException(status_code=500, detail="内部服务器错误")
+
+
+# 导入新的告警接入路由
+from src.api.webhook_ingestion import router as webhook_ingestion_router
+from src.api.prometheus_ingestion import router as prometheus_ingestion_router
+from src.api.grafana_ingestion import router as grafana_ingestion_router
