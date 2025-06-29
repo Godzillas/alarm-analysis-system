@@ -87,17 +87,28 @@ if [ "$DEV_MODE" == "dev" ]; then
     echo "📦 检查后端依赖..."
     pip install -i https://pypi.tuna.tsinghua.edu.cn/simple/ -r requirements.txt > /dev/null 2>&1
     
+    # 等待并获取前端实际端口
+    echo "🔍 检测前端服务器地址..."
+    sleep 2
+    FRONTEND_URL=$(grep -o "http://localhost:[0-9]*" logs/frontend.log | tail -1)
+    if [ -z "$FRONTEND_URL" ]; then
+        FRONTEND_URL="http://localhost:3001"
+    fi
+    
     echo ""
     echo "🎉 开发服务器启动完成!"
-    echo "🎨 前端开发服务器: http://localhost:8080"
+    echo "🎨 前端开发服务器: $FRONTEND_URL"
     echo "🔥 后端API服务器: http://localhost:8000"
     echo "📚 API文档: http://localhost:8000/docs"
     echo "📝 前端日志: tail -f logs/frontend.log"
+    echo ""
+    echo "⚠️  请访问前端地址查看最新修改: $FRONTEND_URL"
+    echo "⚠️  不要访问 http://localhost:8000 的静态页面!"
     echo "💡 按 Ctrl+C 停止所有服务"
     echo ""
     
     # 启动后端 (热重载)
-    python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+    DEV_MODE=true python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
     
 else
     echo "🔨 生产模式构建..."

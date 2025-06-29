@@ -18,17 +18,64 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
         self.room_connections: Dict[str, Set[WebSocket]] = {}
+        self.connection_times: Dict[WebSocket, datetime] = {}
+        self.connection_count = 0
+        self.client_connection_times: Dict[str, List[datetime]] = {}  # IP -> 连接时间列表
         
+    def _check_rate_limit(self, client_ip: str) -> bool:
+        """检查客户端连接频率限制"""
+        now = datetime.utcnow()
+        if client_ip not in self.client_connection_times:
+            self.client_connection_times[client_ip] = []
+        
+        # 清理5分钟前的连接记录
+        self.client_connection_times[client_ip] = [
+            t for t in self.client_connection_times[client_ip] 
+            if (now - t).total_seconds() < 300
+        ]
+        
+        # 检查是否超过频率限制（5分钟内超过20次连接）
+        if len(self.client_connection_times[client_ip]) > 20:
+            return False
+        
+        # 记录此次连接
+        self.client_connection_times[client_ip].append(now)
+        return True
+
+    def _check_rate_limit_strict(self, client_ip: str) -> bool:
+        """严格的连接频率限制检查"""
+        now = datetime.utcnow()
+        if client_ip not in self.client_connection_times:
+            self.client_connection_times[client_ip] = []
+        
+        # 清理1分钟前的连接记录
+        self.client_connection_times[client_ip] = [
+            t for t in self.client_connection_times[client_ip] 
+            if (now - t).total_seconds() < 60
+        ]
+        
+        # 检查是否超过严格限制（1分钟内超过15次连接）- 对开发环境更宽松
+        if len(self.client_connection_times[client_ip]) > 15:
+            return False
+        
+        # 记录此次连接
+        self.client_connection_times[client_ip].append(now)
+        return True
+
     async def connect(self, websocket: WebSocket, room: str = "default"):
         """建立WebSocket连接"""
         await websocket.accept()
         self.active_connections.append(websocket)
+        self.connection_times[websocket] = datetime.utcnow()
+        self.connection_count += 1
         
         if room not in self.room_connections:
             self.room_connections[room] = set()
         self.room_connections[room].add(websocket)
         
-        logger.info(f"WebSocket连接建立: room={room}, 当前连接数={len(self.active_connections)}")
+        # 大幅减少日志记录 - 只在累计连接数是100的倍数时记录
+        if self.connection_count % 100 == 1:
+            logger.info(f"WebSocket连接统计: room={room}, 当前连接数={len(self.active_connections)}, 累计连接={self.connection_count}")
         
         # 发送欢迎消息
         await self.send_personal_message({
@@ -46,7 +93,15 @@ class ConnectionManager:
         for room_connections in self.room_connections.values():
             room_connections.discard(websocket)
             
-        logger.info(f"WebSocket连接断开, 当前连接数={len(self.active_connections)}")
+        # 计算连接持续时间
+        duration = None
+        if websocket in self.connection_times:
+            duration = datetime.utcnow() - self.connection_times[websocket]
+            del self.connection_times[websocket]
+        
+        # 只记录极短连接（可能的异常），其他断开不记录日志
+        if duration and duration.total_seconds() < 1:
+            logger.debug(f"WebSocket极短连接: 持续时间={duration.total_seconds():.2f}秒")
         
     async def send_personal_message(self, message: dict, websocket: WebSocket):
         """发送个人消息"""
@@ -125,8 +180,21 @@ class ConnectionManager:
         
     def get_connection_stats(self) -> dict:
         """获取连接统计"""
+        # 计算连接持续时间统计
+        now = datetime.utcnow()
+        durations = []
+        for websocket, connect_time in self.connection_times.items():
+            duration = (now - connect_time).total_seconds()
+            durations.append(duration)
+        
+        avg_duration = sum(durations) / len(durations) if durations else 0
+        short_connections = len([d for d in durations if d < 5])
+        
         return {
             "total_connections": len(self.active_connections),
+            "cumulative_connections": self.connection_count,
+            "average_duration_seconds": round(avg_duration, 2),
+            "short_connections_count": short_connections,
             "room_connections": {
                 room: len(connections) 
                 for room, connections in self.room_connections.items()

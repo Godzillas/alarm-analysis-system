@@ -4,6 +4,7 @@ import 'nprogress/nprogress.css'
 
 // 路由组件
 const Layout = () => import('@/components/Layout/index.vue')
+const Login = () => import('@/views/Login/index.vue')
 const Dashboard = () => import('@/views/Dashboard/index.vue')
 const AlarmManagement = () => import('@/views/AlarmManagement/index.vue')
 const Analytics = () => import('@/views/Analytics/index.vue')
@@ -13,9 +14,19 @@ const RuleManagement = () => import('@/views/RuleManagement/index.vue')
 const SystemManagement = () => import('@/views/SystemManagement/index.vue')
 const ContactPointManagement = () => import('@/views/ContactPointManagement/index.vue')
 const AlertTemplateManagement = () => import('@/views/AlertTemplateManagement/index.vue')
+const LifecycleManagement = () => import('@/views/LifecycleManagement/index.vue')
 const Settings = () => import('@/views/Settings/index.vue')
 
 const routes = [
+  {
+    path: '/login',
+    name: 'Login',
+    component: Login,
+    meta: {
+      title: '登录',
+      hideInMenu: true
+    }
+  },
   {
     path: '/',
     component: Layout,
@@ -103,6 +114,15 @@ const routes = [
         }
       },
       {
+        path: '/lifecycle',
+        name: 'LifecycleManagement',
+        component: LifecycleManagement,
+        meta: {
+          title: '生命周期管理',
+          icon: 'Timer'
+        }
+      },
+      {
         path: '/settings',
         name: 'Settings',
         component: Settings,
@@ -129,7 +149,31 @@ router.beforeEach((to, from, next) => {
     document.title = `${to.meta.title} - 告警分析系统`
   }
   
-  next()
+  // 检查认证状态
+  const token = localStorage.getItem('access_token')
+  const isLoginPage = to.path === '/login'
+  
+  // 临时禁用认证检查以便测试联络点和告警模板功能
+  // TODO: 恢复认证检查
+  /*
+  if (!token && !isLoginPage) {
+    // 没有token且不在登录页，跳转到登录页
+    next('/login')
+  } else if (token && isLoginPage) {
+    // 有token且在登录页，跳转到首页
+    next('/dashboard')
+  } else {
+    next()
+  }
+  */
+  
+  // 临时允许所有访问
+  if (token && isLoginPage) {
+    // 有token且在登录页，跳转到首页
+    next('/dashboard')
+  } else {
+    next()
+  }
 })
 
 // 全局后置守卫

@@ -84,7 +84,7 @@
               <el-icon><Setting /></el-icon>
               系统设置
             </el-dropdown-item>
-            <el-dropdown-item divided>
+            <el-dropdown-item divided @click="handleLogout">
               <el-icon><SwitchButton /></el-icon>
               退出登录
             </el-dropdown-item>
@@ -97,10 +97,24 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useThemeStore } from '@/store/theme'
 import { useAlarmStore } from '@/store/alarm'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { 
+  Fold, 
+  Expand, 
+  FullScreen, 
+  Sunny, 
+  Moon, 
+  Bell, 
+  User, 
+  ArrowDown, 
+  Setting, 
+  SwitchButton 
+} from '@element-plus/icons-vue'
 
+const router = useRouter()
 const themeStore = useThemeStore()
 const alarmStore = useAlarmStore()
 
@@ -114,6 +128,26 @@ const toggleFullscreen = () => {
     })
   } else {
     document.exitFullscreen()
+  }
+}
+
+// 退出登录
+const handleLogout = async () => {
+  try {
+    await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    
+    // 清除本地存储的token
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('token_type')
+    
+    ElMessage.success('已退出登录')
+    router.push('/login')
+  } catch {
+    // 用户取消操作
   }
 }
 

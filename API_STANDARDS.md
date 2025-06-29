@@ -58,11 +58,11 @@ GET /api/teams/{team_id}/members/
 | 系统管理 | `/api/systems` | `system.js` | `/api/systems/` | ✅ |
 | 联络点管理 | `/api/contact-points` | `contactPoint.js` | `/api/contact-points/` | ✅ |
 | 告警模板 | `/api/alert-templates` | `alertTemplate.js` | `/api/alert-templates/` | ✅ |
-| 解决方案 | `/api/solutions` | `solutions.js` | `/api/solutions/` | 🔧 需修复 |
-| 订阅管理 | `/api/subscriptions` | `subscriptions.js` | `/api/subscriptions/` | 🔧 需修复 |
-| 抑制管理 | `/api/suppressions` | `suppression.js` | `/api/suppressions/` | 🔧 需修复 |
-| 权限管理 | `/api/rbac` | `rbac.js` | 各子模块不同 | 🔧 需修复 |
-| 健康监控 | `/api/health` | `health.js` | `/api/health/` | 🔧 需修复 |
+| 解决方案 | `/api/solutions` | `solutions.js` | `/api/solutions/` | ✅ |
+| 订阅管理 | `/api/subscriptions` | `subscriptions.js` | `/api/subscriptions/` | ✅ |
+| 抑制管理 | `/api/suppressions` | `suppression.js` | `/api/suppressions/` | ✅ |
+| 权限管理 | `/api/rbac` | `rbac.js` | 各子模块不同 | ✅ |
+| 健康监控 | `/api/health` | `health.js` | `/api/health/` | ✅ |
 | 分析统计 | `/api/analytics` | `analytics.js` | 多个端点 | ✅ |
 
 ## 🔧 HTTP方法规范

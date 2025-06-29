@@ -21,7 +21,8 @@ except ImportError:
 from src.core.database import get_db_session
 from src.models.suppression import (
     AlarmSuppression, SuppressionLog, MaintenanceWindow, DependencyMap,
-    SuppressionType, SuppressionStatus, SUPPRESSION_TEMPLATES
+    SuppressionType, SuppressionStatus, SUPPRESSION_TEMPLATES,
+    AlarmSuppressionCreate, AlarmSuppressionUpdate, AlarmSuppressionResponse
 )
 from src.models.alarm import AlarmTable, User
 from src.models.noise_reduction import NoiseReductionRule
@@ -45,26 +46,26 @@ class SuppressionService:
     async def create_suppression(
         self,
         db: AsyncSession,
-        suppression_data: Dict[str, Any],
+        suppression_data: AlarmSuppressionCreate,
         creator_id: int
     ) -> AlarmSuppression:
         """创建告警抑制规则"""
         
-        # 验证抑制条件
-        await self._validate_suppression_conditions(suppression_data.get('conditions', {}))
+        # 验证抑制条件 (Pydantic already handles this)
+        # await self._validate_suppression_conditions(suppression_data.conditions)
         
         # 创建抑制规则
         suppression = AlarmSuppression(
-            name=suppression_data['name'],
-            description=suppression_data.get('description'),
-            suppression_type=suppression_data['suppression_type'],
-            conditions=suppression_data['conditions'],
-            start_time=suppression_data['start_time'],
-            end_time=suppression_data.get('end_time'),
-            is_recurring=suppression_data.get('is_recurring', False),
-            recurrence_pattern=suppression_data.get('recurrence_pattern'),
-            priority=suppression_data.get('priority', 100),
-            action_config=suppression_data.get('action_config', {}),
+            name=suppression_data.name,
+            description=suppression_data.description,
+            suppression_type=suppression_data.suppression_type,
+            conditions=suppression_data.conditions.model_dump(),
+            start_time=suppression_data.start_time,
+            end_time=suppression_data.end_time,
+            is_recurring=suppression_data.is_recurring,
+            recurrence_pattern=suppression_data.recurrence_pattern,
+            priority=suppression_data.priority,
+            action_config=suppression_data.action_config.model_dump() if suppression_data.action_config else None,
             created_by=creator_id
         )
         
@@ -385,19 +386,7 @@ class SuppressionService:
         for suppression in suppressions:
             await self._load_suppression_to_cache(suppression)
     
-    async def _validate_suppression_conditions(self, conditions: Dict[str, Any]):
-        """验证抑制条件"""
-        
-        required_fields = ['match_type']  # 基本必需字段
-        
-        for field in required_fields:
-            if field not in conditions:
-                raise ValueError(f"Missing required condition field: {field}")
-        
-        # 验证匹配类型
-        valid_match_types = ['exact', 'regex', 'wildcard', 'tag_based']
-        if conditions['match_type'] not in valid_match_types:
-            raise ValueError(f"Invalid match_type: {conditions['match_type']}")
+    
     
     async def _load_suppression_to_cache(self, suppression: AlarmSuppression):
         """加载抑制规则到缓存"""
@@ -563,20 +552,137 @@ class SuppressionService:
                     
         elif pattern_type == 'daily':
             time_ranges = pattern.get('time_ranges', [])
+            if not time_ranges:
+                return False
+            
+            current_time_only = current_time.time()
+            
             for time_range in time_ranges:
-                start_time = datetime.strptime(time_range['start'], '%H:%M').time()
-                end_time = datetime.strptime(time_range['end'], '%H:%M').time()
-                current_time_only = current_time.time()
-                
-                if start_time <= current_time_only <= end_time:
-                    return True
+                try:
+                    start_time_str = time_range['start']
+                    end_time_str = time_range['end']
+                    
+                    start_time = datetime.strptime(start_time_str, '%H:%M').time()
+                    end_time = datetime.strptime(end_time_str, '%H:%M').time()
+                    
+                    if start_time <= end_time:
+                        if start_time <= current_time_only <= end_time:
+                            return True
+                    else: # Overnight range, e.g., 22:00 - 06:00
+                        if current_time_only >= start_time or current_time_only <= end_time:
+                            return True
+                except (KeyError, ValueError):
+                    self.logger.warning(f"Invalid daily time range format: {time_range}")
+                    continue
+            return False
                     
         elif pattern_type == 'weekly':
-            weekdays = pattern.get('weekdays', [])
-            current_weekday = current_time.weekday()
+            weekdays = pattern.get('weekdays', []) # 0=Monday, 6=Sunday
+            if not weekdays:
+                return False
             
-            return current_weekday in weekdays
+            current_weekday = current_time.weekday() # 0=Monday, 6=Sunday
             
+            if current_weekday not in weekdays:
+                return False
+            
+            time_ranges = pattern.get('time_ranges', [])
+            if not time_ranges: # If no time ranges specified, just check weekday
+                return True
+            
+            current_time_only = current_time.time()
+            
+            for time_range in time_ranges:
+                try:
+                    start_time_str = time_range['start']
+                    end_time_str = time_range['end']
+                    
+                    start_time = datetime.strptime(start_time_str, '%H:%M').time()
+                    end_time = datetime.strptime(end_time_str, '%H:%M').time()
+                    
+                    if start_time <= end_time:
+                        if start_time <= current_time_only <= end_time:
+                            return True
+                    else: # Overnight range
+                        if current_time_only >= start_time or current_time_only <= end_time:
+                            return True
+                except (KeyError, ValueError):
+                    self.logger.warning(f"Invalid weekly time range format: {time_range}")
+                    continue
+            return False
+        
+        elif pattern_type == 'monthly':
+            days_of_month = pattern.get('days_of_month', []) # 1-31
+            if not days_of_month:
+                return False
+            
+            current_day = current_time.day
+            if current_day not in days_of_month:
+                return False
+            
+            time_ranges = pattern.get('time_ranges', [])
+            if not time_ranges:
+                return True
+            
+            current_time_only = current_time.time()
+            
+            for time_range in time_ranges:
+                try:
+                    start_time_str = time_range['start']
+                    end_time_str = time_range['end']
+                    
+                    start_time = datetime.strptime(start_time_str, '%H:%M').time()
+                    end_time = datetime.strptime(end_time_str, '%H:%M').time()
+                    
+                    if start_time <= end_time:
+                        if start_time <= current_time_only <= end_time:
+                            return True
+                    else: # Overnight range
+                        if current_time_only >= start_time or current_time_only <= end_time:
+                            return True
+                except (KeyError, ValueError):
+                    self.logger.warning(f"Invalid monthly time range format: {time_range}")
+                    continue
+            return False
+        
+        elif pattern_type == 'yearly':
+            months = pattern.get('months', []) # 1-12
+            days_of_month = pattern.get('days_of_month', []) # 1-31
+            
+            if not months or not days_of_month:
+                return False
+            
+            current_month = current_time.month
+            current_day = current_time.day
+            
+            if current_month not in months or current_day not in days_of_month:
+                return False
+            
+            time_ranges = pattern.get('time_ranges', [])
+            if not time_ranges:
+                return True
+            
+            current_time_only = current_time.time()
+            
+            for time_range in time_ranges:
+                try:
+                    start_time_str = time_range['start']
+                    end_time_str = time_range['end']
+                    
+                    start_time = datetime.strptime(start_time_str, '%H:%M').time()
+                    end_time = datetime.strptime(end_time_str, '%H:%M').time()
+                    
+                    if start_time <= end_time:
+                        if start_time <= current_time_only <= end_time:
+                            return True
+                    else: # Overnight range
+                        if current_time_only >= start_time or current_time_only <= end_time:
+                            return True
+                except (KeyError, ValueError):
+                    self.logger.warning(f"Invalid yearly time range format: {time_range}")
+                    continue
+            return False
+        
         return False
     
     async def _update_suppression_stats(self, db: AsyncSession, rule_id: int):

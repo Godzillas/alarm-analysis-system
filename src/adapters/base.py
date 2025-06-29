@@ -239,3 +239,6 @@ class BaseAlarmAdapter(ABC):
             pass
         
         return None
+
+
+BaseAdapter = BaseAlarmAdapter

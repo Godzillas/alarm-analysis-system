@@ -20,6 +20,10 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
     """全局错误处理中间件"""
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # 跳过WebSocket连接的错误处理中间件
+        if request.url.path.startswith("/ws"):
+            return await call_next(request)
+            
         try:
             response = await call_next(request)
             return response
@@ -58,6 +62,10 @@ class LoggingMiddleware(BaseHTTPMiddleware):
     """请求日志中间件"""
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # 跳过WebSocket连接的日志处理
+        if request.url.path.startswith("/ws"):
+            return await call_next(request)
+            
         start_time = time.time()
         
         # 记录请求开始
@@ -105,6 +113,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """安全头中间件"""
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # 跳过WebSocket连接的中间件处理
+        if request.url.path.startswith("/ws"):
+            return await call_next(request)
+            
         response = await call_next(request)
         
         # 添加安全头

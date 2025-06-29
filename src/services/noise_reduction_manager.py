@@ -3,7 +3,7 @@
 """
 
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func, delete, update
 from sqlalchemy.orm import selectinload
@@ -441,46 +441,45 @@ class NoiseReductionManager:
     
     # 工具方法
     
-    def _validate_rule_config(self, rule_data) -> None:
+    def _validate_rule_config(self, rule_data: Union[NoiseReductionRuleCreate, NoiseReductionRuleUpdate, NoiseReductionRule]) -> None:
         """验证规则配置"""
-        if hasattr(rule_data, 'rule_type'):
-            rule_type = rule_data.rule_type
-            conditions = rule_data.conditions
-        else:
-            rule_type = rule_data.rule_type
-            conditions = rule_data.conditions
-        
-        # 基础验证
-        if not conditions:
+        rule_type = rule_data.rule_type
+        conditions_data = rule_data.conditions
+        parameters_data = rule_data.parameters
+
+        if not conditions_data:
             raise ValidationException("Rule conditions cannot be empty")
-        
-        # 根据规则类型验证
-        if rule_type == "frequency_limit":
-            required_fields = ["time_window_minutes", "max_count", "group_by"]
-            for field in required_fields:
-                if field not in conditions:
-                    raise ValidationException(f"Missing required field for frequency_limit: {field}")
-        
-        elif rule_type == "threshold_filter":
-            required_fields = ["time_window_hours", "min_occurrences"]
-            for field in required_fields:
-                if field not in conditions:
-                    raise ValidationException(f"Missing required field for threshold_filter: {field}")
-        
-        elif rule_type == "silence_window":
-            if "time_ranges" not in conditions:
-                raise ValidationException("silence_window rule requires time_ranges")
-            
-            # 验证时间格式
-            for time_range in conditions["time_ranges"]:
-                if "start" not in time_range or "end" not in time_range:
-                    raise ValidationException("time_range must have start and end times")
-        
+
+        try:
+            if rule_type == NoiseRuleType.FREQUENCY_LIMIT:
+                FrequencyLimitConditions(**conditions_data)
+                if parameters_data:
+                    FrequencyLimitParameters(**parameters_data)
+            elif rule_type == NoiseRuleType.THRESHOLD_FILTER:
+                ThresholdFilterConditions(**conditions_data)
+                if parameters_data:
+                    ThresholdFilterParameters(**parameters_data)
+            elif rule_type == NoiseRuleType.SILENCE_WINDOW:
+                SilenceWindowConditions(**conditions_data)
+                if parameters_data:
+                    SilenceWindowParameters(**parameters_data)
+            elif rule_type == NoiseRuleType.DEPENDENCY_FILTER:
+                DependencyFilterConditions(**conditions_data)
+                if parameters_data:
+                    DependencyFilterParameters(**parameters_data)
+            elif rule_type == NoiseRuleType.DUPLICATE_SUPPRESS:
+                DuplicateSuppressConditions(**conditions_data)
+            elif rule_type == NoiseRuleType.TIME_BASED:
+                TimeBasedConditions(**conditions_data)
+            elif rule_type == NoiseRuleType.CUSTOM_RULE:
+                CustomRuleConditions(**conditions_data)
+        except Exception as e:
+            raise ValidationException(f"Invalid rule configuration for {rule_type}: {str(e)}")
+
         # 验证时间有效性
-        if hasattr(rule_data, 'effective_start') and hasattr(rule_data, 'effective_end'):
-            if (rule_data.effective_start and rule_data.effective_end and 
-                rule_data.effective_start >= rule_data.effective_end):
-                raise ValidationException("effective_start must be before effective_end")
+        if (rule_data.effective_start and rule_data.effective_end and 
+            rule_data.effective_start >= rule_data.effective_end):
+            raise ValidationException("effective_start must be before effective_end")
     
     async def get_rule_templates(self) -> Dict[str, Any]:
         """获取规则模板"""

@@ -51,7 +51,10 @@ class EndpointManager:
                 
                 # 生成API令牌和接入URL
                 endpoint.api_token = self._generate_api_token()
-                endpoint.webhook_url = self._generate_webhook_url(endpoint.api_token)
+                endpoint.webhook_url = self._generate_webhook_url(
+                    endpoint.api_token, 
+                    endpoint_data.get("endpoint_type", "webhook")
+                )
                 
                 session.add(endpoint)
                 await session.commit()
@@ -224,13 +227,56 @@ class EndpointManager:
                 "last_activity": None,
                 "status": "inactive"
             }
+    
+    async def regenerate_endpoint_token(self, endpoint_id: int) -> Optional[Endpoint]:
+        """重新生成接入点token"""
+        try:
+            async with async_session_maker() as session:
+                result = await session.execute(
+                    select(Endpoint).where(Endpoint.id == endpoint_id)
+                )
+                endpoint = result.scalars().first()
+                
+                if not endpoint:
+                    return None
+                
+                # 生成新的token和URL
+                old_token = endpoint.api_token
+                endpoint.api_token = self._generate_api_token()
+                endpoint.webhook_url = self._generate_webhook_url(
+                    endpoint.api_token, 
+                    endpoint.endpoint_type
+                )
+                endpoint.updated_at = datetime.utcnow()
+                
+                await session.commit()
+                await session.refresh(endpoint)
+                
+                # 更新活跃接入点
+                if endpoint.enabled:
+                    await self._update_active_endpoint(endpoint)
+                
+                logger.info(f"Regenerated token for endpoint {endpoint.name}: {old_token} -> {endpoint.api_token}")
+                return endpoint
+                
+        except Exception as e:
+            logger.error(f"Failed to regenerate token for endpoint {endpoint_id}: {str(e)}")
+            return None
             
     async def _activate_endpoint(self, endpoint: Endpoint):
         """激活接入点"""
         try:
+            config_data = endpoint.config
+            if isinstance(config_data, str):
+                try:
+                    config_data = json.loads(config_data)
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse config for endpoint {endpoint.id}: {endpoint.config}")
+                    config_data = {} # Fallback to empty dict if parsing fails
+
             self.active_endpoints[endpoint.id] = {
                 "endpoint": endpoint,
-                "config": endpoint.config,
+                "config": config_data,
                 "last_activity": datetime.utcnow(),
                 "status": "active"
             }
@@ -266,8 +312,16 @@ class EndpointManager:
         """更新活跃接入点"""
         try:
             if endpoint.id in self.active_endpoints:
+                config_data = endpoint.config
+                if isinstance(config_data, str):
+                    try:
+                        config_data = json.loads(config_data)
+                    except json.JSONDecodeError:
+                        logger.error(f"Failed to parse config for endpoint {endpoint.id}: {endpoint.config}")
+                        config_data = {} # Fallback to empty dict if parsing fails
+
                 self.active_endpoints[endpoint.id]["endpoint"] = endpoint
-                self.active_endpoints[endpoint.id]["config"] = endpoint.config
+                self.active_endpoints[endpoint.id]["config"] = config_data
                 
         except Exception as e:
             logger.error(f"Failed to update active endpoint {endpoint.id}: {str(e)}")
@@ -308,7 +362,26 @@ class EndpointManager:
             
     async def _test_webhook_endpoint(self, endpoint: Endpoint) -> Dict[str, Any]:
         """测试Webhook接入点"""
-        return {"success": True, "message": "Webhook endpoint configured"}
+        try:
+            import aiohttp
+            
+            config = endpoint.config
+            url = config.get("url") # Assuming 'url' is in the config for webhook endpoints
+            
+            if not url:
+                return {"success": False, "error": "Webhook URL not configured in endpoint config"}
+            
+            test_payload = {"test_message": "This is a test from alarm-analysis-system"}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=test_payload, timeout=endpoint.timeout) as response:
+                    if response.status >= 200 and response.status < 300:
+                        return {"success": True, "status_code": response.status, "message": "Webhook test successful"}
+                    else:
+                        return {"success": False, "status_code": response.status, "message": f"Webhook test failed with status code {response.status}"}
+                        
+        except Exception as e:
+            return {"success": False, "error": str(e), "message": "Failed to send test webhook"}
         
     async def _test_email_endpoint(self, endpoint: Endpoint) -> Dict[str, Any]:
         """测试邮件接入点"""
@@ -340,9 +413,14 @@ class EndpointManager:
         # 生成32字节的随机令牌
         return secrets.token_urlsafe(32)
         
-    def _generate_webhook_url(self, api_token: str) -> str:
+    def _generate_webhook_url(self, api_token: str, endpoint_type: str = "webhook") -> str:
         """生成Webhook接入URL"""
-        return f"/api/webhook/alarm/{api_token}"
+        if endpoint_type == "grafana":
+            return f"/api/grafana/webhook/{api_token}"
+        elif endpoint_type == "prometheus":
+            return f"/api/prometheus/webhook/{api_token}"
+        else:
+            return f"/api/webhook/alarm/{api_token}"
         
     async def get_endpoint_by_token(self, api_token: str) -> Optional[Endpoint]:
         """通过API令牌获取接入点"""
@@ -442,3 +520,7 @@ class EndpointManager:
         except Exception as e:
             logger.error(f"Failed to transform alarm data: {str(e)}")
             return alarm_data
+
+
+# 全局实例
+endpoint_manager = EndpointManager()

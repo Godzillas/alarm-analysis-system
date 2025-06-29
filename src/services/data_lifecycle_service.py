@@ -16,7 +16,7 @@ from src.core.config import settings
 from src.core.exceptions import DatabaseException, ConfigurationException
 from src.models.alarm import AlarmTable
 from src.models.alarm_processing import AlarmProcessing, AlarmProcessingHistory, AlarmProcessingComment
-from src.models.subscription import AlarmNotification, NotificationDigest
+from src.models.alarm import NotificationLog
 
 logger = get_logger(__name__)
 

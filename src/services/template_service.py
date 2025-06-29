@@ -15,9 +15,8 @@ from src.core.exceptions import (
     DatabaseException, ValidationException,
     ResourceNotFoundException
 )
-from src.models.subscription import (
-    NotificationTemplate, AlarmNotification,
-    NotificationTemplateCreate
+from src.models.alarm import (
+    NotificationTemplate, NotificationLog
 )
 from src.models.alarm import AlarmTable
 
@@ -66,12 +65,10 @@ class TemplateService:
                     name=template_data.name,
                     description=template_data.description,
                     template_type=template_data.template_type,
-                    channel_type=template_data.channel_type,
+                    content_type=template_data.content_type,
                     subject_template=template_data.subject_template,
                     content_template=template_data.content_template,
                     html_template=template_data.html_template,
-                    format_config=template_data.format_config,
-                    applicable_channels=template_data.applicable_channels,
                     created_by=user_id
                 )
                 

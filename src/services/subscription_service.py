@@ -14,13 +14,9 @@ from src.core.exceptions import (
     DatabaseException, ValidationException,
     ResourceNotFoundException, AuthorizationException
 )
-from src.models.subscription import (
-    AlarmSubscription, NotificationTemplate, AlarmNotification,
-    NotificationChannel, NotificationDigest,
-    SubscriptionCreate, SubscriptionUpdate, SubscriptionType,
-    NotificationStatus, NotificationPriority
+from src.models.alarm import (
+    AlarmTable, UserSubscription, NotificationTemplate, NotificationLog
 )
-from src.models.alarm import AlarmTable
 
 logger = get_logger(__name__)
 

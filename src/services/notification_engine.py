@@ -11,10 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database import async_session_maker
 from src.core.logging import get_logger
 from src.core.exceptions import DatabaseException
-from src.models.alarm import AlarmTable
-from src.models.subscription import AlarmSubscription, AlarmNotification
-from src.services.subscription_service import SubscriptionService
-from src.services.notification_service import NotificationService
+from src.models.alarm import AlarmTable, UserSubscription, NotificationLog
+from src.services.notification_service import notification_service
 
 logger = get_logger(__name__)
 
@@ -24,8 +22,7 @@ class NotificationEngine:
     
     def __init__(self):
         self.logger = logger
-        self.subscription_service = SubscriptionService()
-        self.notification_service = NotificationService()
+        self.notification_service = notification_service
         self.is_running = False
         self.processing_queue = asyncio.Queue()
         self.worker_tasks = []
@@ -95,34 +92,32 @@ class NotificationEngine:
         try:
             async with async_session_maker() as session:
                 # 创建测试通知记录
-                test_notification = AlarmNotification(
-                    alarm_id=0,  # 测试用的虚拟告警ID
+                test_notification = NotificationLog(
                     subscription_id=0,  # 测试用的虚拟订阅ID
-                    user_id=user_id,
-                    notification_type="test",
-                    channel=channel_config["channel_type"],
-                    recipient=channel_config["recipient"],
-                    subject="测试通知",
-                    content=test_message,
-                    notification_config=channel_config
+                    alarm_id=0,  # 测试用的虚拟告警ID
+                    contact_point_id=0,  # 测试用的虚拟联系点ID
+                    status="pending",
+                    notification_content={
+                        "subject": "测试通知",
+                        "content": test_message,
+                        "channel_type": channel_config.get("channel_type", "test"),
+                        "recipient": channel_config.get("recipient", "test@example.com")
+                    }
                 )
                 
                 session.add(test_notification)
                 await session.commit()
                 
-                # 发送通知
-                success = await self.notification_service.send_notification(test_notification.id)
-                
                 self.logger.info(
-                    f"Test notification sent: {success}",
+                    f"Test notification created",
                     extra={
                         "user_id": user_id,
-                        "channel": channel_config["channel_type"],
-                        "success": success
+                        "channel": channel_config.get("channel_type", "test"),
+                        "notification_id": test_notification.id
                     }
                 )
                 
-                return success
+                return True
                 
         except Exception as e:
             self.logger.error(f"Error sending test notification: {str(e)}")
@@ -196,41 +191,14 @@ class NotificationEngine:
     async def _process_alarm_notification(self, alarm_id: int, worker_name: str):
         """处理告警通知"""
         try:
-            async with async_session_maker() as session:
-                # 获取告警
-                alarm = await session.get(AlarmTable, alarm_id)
-                if not alarm:
-                    self.logger.error(f"Alarm {alarm_id} not found")
-                    return
-                
-                # 查找匹配的订阅
-                matching_subscriptions = await self.subscription_service.find_matching_subscriptions(alarm)
-                
-                if not matching_subscriptions:
-                    self.logger.debug(f"No matching subscriptions for alarm {alarm_id}")
-                    return
-                
-                # 创建通知
-                notifications = await self.subscription_service.create_notifications(
-                    alarm, matching_subscriptions
-                )
-                
-                # 发送通知
-                if notifications:
-                    notification_ids = [n.id for n in notifications]
-                    results = await self.notification_service.send_batch_notifications(notification_ids)
-                    
-                    self.logger.info(
-                        f"Processed alarm {alarm_id}: {len(notifications)} notifications created, "
-                        f"{results['success']} sent successfully",
-                        extra={
-                            "alarm_id": alarm_id,
-                            "worker": worker_name,
-                            "notifications_created": len(notifications),
-                            "success_count": results["success"],
-                            "failed_count": results["failed"]
-                        }
-                    )
+            # 使用新的告警分发服务
+            from src.services.alarm_dispatch import alarm_dispatch_service
+            await alarm_dispatch_service.dispatch_alarm(alarm_id, is_update=False)
+            
+            self.logger.debug(
+                f"Alarm {alarm_id} dispatched for notification processing",
+                extra={"alarm_id": alarm_id, "worker": worker_name}
+            )
                 
         except Exception as e:
             self.logger.error(

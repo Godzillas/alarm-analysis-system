@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
-import alertTemplateApi from '@/api/alertTemplate'
+import * as alertTemplateApi from '@/api/alertTemplate'
 
 export const useAlertTemplateStore = defineStore('alertTemplate', () => {
   const alertTemplates = ref([])
@@ -35,8 +35,13 @@ export const useAlertTemplateStore = defineStore('alertTemplate', () => {
     loading.value = true
     try {
       const response = await alertTemplateApi.getAlertTemplates(params)
-      alertTemplates.value = response.data.items || response.data
-      return response.data
+      // Handle different response structures safely
+      const data = response?.data || response
+      alertTemplates.value = data?.items || data || []
+      return {
+        items: alertTemplates.value,
+        total: data?.total || data?.count || alertTemplates.value.length
+      }
     } catch (error) {
       console.error('Failed to fetch alert templates:', error)
       throw error

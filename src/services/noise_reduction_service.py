@@ -16,7 +16,12 @@ from src.core.exceptions import DatabaseException, ValidationException, Resource
 from src.models.noise_reduction import (
     NoiseReductionRule, NoiseRuleExecutionLog, NoiseReductionStats,
     NoiseReductionRuleCreate, NoiseReductionRuleUpdate,
-    NoiseRuleType, NoiseRuleAction, RuleCondition, RuleConditionGroup
+    NoiseRuleType, NoiseRuleAction, RuleCondition, RuleConditionGroup,
+    FrequencyLimitConditions, ThresholdFilterConditions, SilenceWindowConditions,
+    DependencyFilterConditions, DuplicateSuppressConditions, TimeBasedConditions,
+    CustomRuleConditions,
+    FrequencyLimitParameters, ThresholdFilterParameters, SilenceWindowParameters,
+    DependencyFilterParameters, DefaultRuleParameters
 )
 from src.models.alarm import AlarmTable
 
@@ -134,19 +139,26 @@ class NoiseReductionEngine:
             
             # 根据规则类型执行不同的匹配逻辑
             if rule.rule_type == NoiseRuleType.FREQUENCY_LIMIT:
-                return await self._check_frequency_limit(rule, alarm_data, match_details)
+                conditions = FrequencyLimitConditions(**rule.conditions)
+                return await self._check_frequency_limit(conditions, alarm_data, match_details)
             elif rule.rule_type == NoiseRuleType.THRESHOLD_FILTER:
-                return await self._check_threshold_filter(rule, alarm_data, match_details)
+                conditions = ThresholdFilterConditions(**rule.conditions)
+                return await self._check_threshold_filter(conditions, alarm_data, match_details)
             elif rule.rule_type == NoiseRuleType.SILENCE_WINDOW:
-                return await self._check_silence_window(rule, alarm_data, match_details)
+                conditions = SilenceWindowConditions(**rule.conditions)
+                return await self._check_silence_window(conditions, alarm_data, match_details)
             elif rule.rule_type == NoiseRuleType.DEPENDENCY_FILTER:
-                return await self._check_dependency_filter(rule, alarm_data, match_details)
+                conditions = DependencyFilterConditions(**rule.conditions)
+                return await self._check_dependency_filter(conditions, alarm_data, match_details)
             elif rule.rule_type == NoiseRuleType.DUPLICATE_SUPPRESS:
-                return await self._check_duplicate_suppress(rule, alarm_data, match_details)
+                conditions = DuplicateSuppressConditions(**rule.conditions)
+                return await self._check_duplicate_suppress(conditions, alarm_data, match_details)
             elif rule.rule_type == NoiseRuleType.TIME_BASED:
-                return await self._check_time_based(rule, alarm_data, match_details)
+                conditions = TimeBasedConditions(**rule.conditions)
+                return await self._check_time_based(conditions, alarm_data, match_details)
             elif rule.rule_type == NoiseRuleType.CUSTOM_RULE:
-                return await self._check_custom_rule(rule, alarm_data, match_details)
+                conditions = CustomRuleConditions(**rule.conditions)
+                return await self._check_custom_rule(conditions, alarm_data, match_details)
             else:
                 return False, {"reason": "unknown_rule_type"}
                 
@@ -154,12 +166,11 @@ class NoiseReductionEngine:
             self.logger.error(f"Error checking rule match: {str(e)}")
             return False, {"error": str(e)}
     
-    async def _check_frequency_limit(self, rule: NoiseReductionRule, alarm_data: Dict[str, Any], match_details: Dict) -> Tuple[bool, Dict]:
+    async def _check_frequency_limit(self, conditions: FrequencyLimitConditions, alarm_data: Dict[str, Any], match_details: Dict) -> Tuple[bool, Dict]:
         """检查频率限制规则"""
-        conditions = rule.conditions
-        time_window = conditions.get("time_window_minutes", 10)
-        max_count = conditions.get("max_count", 3)
-        group_by = conditions.get("group_by", ["host", "service"])
+        time_window = conditions.time_window_minutes
+        max_count = conditions.max_count
+        group_by = conditions.group_by
         
         # 构建分组键
         group_key = self._build_group_key(alarm_data, group_by)
@@ -189,12 +200,11 @@ class NoiseReductionEngine:
         
         return current_count >= max_count, match_details
     
-    async def _check_threshold_filter(self, rule: NoiseReductionRule, alarm_data: Dict[str, Any], match_details: Dict) -> Tuple[bool, Dict]:
+    async def _check_threshold_filter(self, conditions: ThresholdFilterConditions, alarm_data: Dict[str, Any], match_details: Dict) -> Tuple[bool, Dict]:
         """检查阈值过滤规则"""
-        conditions = rule.conditions
-        time_window_hours = conditions.get("time_window_hours", 1)
-        min_occurrences = conditions.get("min_occurrences", 5)
-        severity_filter = conditions.get("severity", [])
+        time_window_hours = conditions.time_window_hours
+        min_occurrences = conditions.min_occurrences
+        severity_filter = conditions.severity
         
         # 检查严重程度是否在过滤范围内
         alarm_severity = alarm_data.get("severity", "").lower()
@@ -226,11 +236,10 @@ class NoiseReductionEngine:
         
         return occurrence_count < min_occurrences, match_details
     
-    async def _check_silence_window(self, rule: NoiseReductionRule, alarm_data: Dict[str, Any], match_details: Dict) -> Tuple[bool, Dict]:
+    async def _check_silence_window(self, conditions: SilenceWindowConditions, alarm_data: Dict[str, Any], match_details: Dict) -> Tuple[bool, Dict]:
         """检查静默窗口规则"""
-        conditions = rule.conditions
-        time_ranges = conditions.get("time_ranges", [])
-        affected_systems = conditions.get("affected_systems", [])
+        time_ranges = conditions.time_ranges
+        affected_systems = conditions.affected_systems
         
         now = datetime.utcnow()
         current_time = now.strftime("%H:%M")
@@ -260,11 +269,10 @@ class NoiseReductionEngine:
         
         return in_silence_window and system_affected, match_details
     
-    async def _check_dependency_filter(self, rule: NoiseReductionRule, alarm_data: Dict[str, Any], match_details: Dict) -> Tuple[bool, Dict]:
+    async def _check_dependency_filter(self, conditions: DependencyFilterConditions, alarm_data: Dict[str, Any], match_details: Dict) -> Tuple[bool, Dict]:
         """检查依赖过滤规则"""
-        conditions = rule.conditions
-        dependency_map = conditions.get("dependency_map", {})
-        cascade_timeout = conditions.get("cascade_timeout_minutes", 5)
+        dependency_map = conditions.dependency_map
+        cascade_timeout = conditions.cascade_timeout_minutes
         
         # 检查是否有父服务告警
         alarm_service = alarm_data.get("service")
@@ -299,11 +307,10 @@ class NoiseReductionEngine:
         
         return has_parent_alarm, match_details
     
-    async def _check_duplicate_suppress(self, rule: NoiseReductionRule, alarm_data: Dict[str, Any], match_details: Dict) -> Tuple[bool, Dict]:
+    async def _check_duplicate_suppress(self, conditions: DuplicateSuppressConditions, alarm_data: Dict[str, Any], match_details: Dict) -> Tuple[bool, Dict]:
         """检查重复抑制规则"""
-        conditions = rule.conditions
-        similarity_threshold = conditions.get("similarity_threshold", 0.9)
-        time_window_minutes = conditions.get("time_window_minutes", 30)
+        similarity_threshold = conditions.similarity_threshold
+        time_window_minutes = conditions.time_window_minutes
         
         # 查询时间窗口内的相似告警
         time_threshold = datetime.utcnow() - timedelta(minutes=time_window_minutes)
@@ -343,11 +350,10 @@ class NoiseReductionEngine:
         
         return is_duplicate, match_details
     
-    async def _check_time_based(self, rule: NoiseReductionRule, alarm_data: Dict[str, Any], match_details: Dict) -> Tuple[bool, Dict]:
+    async def _check_time_based(self, conditions: TimeBasedConditions, alarm_data: Dict[str, Any], match_details: Dict) -> Tuple[bool, Dict]:
         """检查基于时间的规则"""
-        conditions = rule.conditions
-        allowed_hours = conditions.get("allowed_hours", [])  # 24小时制，如 [9, 10, 11, 12, 13, 14, 15, 16, 17]
-        blocked_weekdays = conditions.get("blocked_weekdays", [])  # 0=周一, 6=周日
+        allowed_hours = conditions.allowed_hours or []
+        blocked_weekdays = conditions.blocked_weekdays or []
         
         now = datetime.utcnow()
         current_hour = now.hour
@@ -372,11 +378,10 @@ class NoiseReductionEngine:
         
         return should_block, match_details
     
-    async def _check_custom_rule(self, rule: NoiseReductionRule, alarm_data: Dict[str, Any], match_details: Dict) -> Tuple[bool, Dict]:
+    async def _check_custom_rule(self, conditions: CustomRuleConditions, alarm_data: Dict[str, Any], match_details: Dict) -> Tuple[bool, Dict]:
         """检查自定义规则"""
-        conditions = rule.conditions
-        rule_expression = conditions.get("expression", "")
-        condition_groups = conditions.get("condition_groups", [])
+        rule_expression = conditions.expression
+        condition_groups = conditions.condition_groups
         
         # 处理条件组
         if condition_groups:
@@ -393,42 +398,49 @@ class NoiseReductionEngine:
     async def _execute_rule_action(self, rule: NoiseReductionRule, alarm_data: Dict[str, Any]) -> Dict[str, Any]:
         """执行规则动作"""
         action = rule.action
-        parameters = rule.parameters or {}
-        
+        parameters = rule.parameters
+
         if action == NoiseRuleAction.SUPPRESS:
             return {"action": "suppressed", "reason": "noise_reduction_rule"}
-        
+
         elif action == NoiseRuleAction.DISCARD:
             return {"action": "discarded", "reason": "noise_reduction_rule"}
-        
+
         elif action == NoiseRuleAction.DELAY:
-            delay_minutes = parameters.get("delay_minutes", 5)
+            if isinstance(parameters, DelayParameters):
+                delay_minutes = parameters.delay_minutes
+            else:
+                delay_minutes = 5 # Default value if parameters model is not DelayParameters
             return {
                 "action": "delayed",
                 "delay_minutes": delay_minutes,
                 "delayed_until": datetime.utcnow() + timedelta(minutes=delay_minutes)
             }
-        
+
         elif action == NoiseRuleAction.DOWNGRADE:
-            new_severity = parameters.get("new_severity", "low")
+            if isinstance(parameters, DowngradeParameters):
+                new_severity = parameters.new_severity
+            else:
+                new_severity = "low" # Default value if parameters model is not DowngradeParameters
             return {
                 "action": "downgraded",
                 "original_severity": alarm_data.get("severity"),
                 "new_severity": new_severity,
                 "modified_alarm": {"severity": new_severity}
             }
-        
+
         elif action == NoiseRuleAction.AGGREGATE:
-            group_key = parameters.get("group_key", "default")
+            group_key = parameters.group_key
+            aggregate_window = parameters.aggregate_window_minutes
             return {
                 "action": "aggregated",
                 "group_key": group_key,
-                "aggregate_window": parameters.get("aggregate_window_minutes", 10)
+                "aggregate_window": aggregate_window
             }
-        
+
         elif action == NoiseRuleAction.FORWARD:
             return {"action": "forwarded", "reason": "passed_all_checks"}
-        
+
         else:
             return {"action": "unknown", "error": f"Unknown action: {action}"}
     

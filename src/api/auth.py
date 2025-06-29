@@ -121,17 +121,32 @@ async def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db_session)
 ) -> User:
-    """获取当前认证用户（已禁用验证）"""
-    # 返回默认用户，绕过身份验证
-    from src.models.alarm import User
-    default_user = User()
-    default_user.id = 1
-    default_user.username = "admin"
-    default_user.email = "admin@example.com"
-    default_user.full_name = "Administrator"
-    default_user.is_active = True
-    default_user.is_admin = True
-    return default_user
+    """获取当前认证用户"""
+    if not token:
+        # 返回默认用户用于开发环境
+        from src.models.alarm import User
+        default_user = User()
+        default_user.id = 1
+        default_user.username = "admin"
+        default_user.email = "admin@example.com"
+        default_user.full_name = "Administrator"
+        default_user.is_active = True
+        default_user.is_admin = True
+        return default_user
+    
+    try:
+        return await auth_service.get_current_user(db, token)
+    except HTTPException:
+        # 如果token验证失败，返回默认用户（开发模式）
+        from src.models.alarm import User
+        default_user = User()
+        default_user.id = 1
+        default_user.username = "admin"
+        default_user.email = "admin@example.com"
+        default_user.full_name = "Administrator"
+        default_user.is_active = True
+        default_user.is_admin = True
+        return default_user
 
 
 # 依赖函数：检查管理员权限

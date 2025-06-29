@@ -3,6 +3,7 @@ API路由定义
 """
 
 import logging
+import asyncio
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, WebSocket, WebSocketDisconnect
@@ -631,6 +632,17 @@ async def get_endpoint_stats(
     return await manager.get_endpoint_stats(endpoint_id)
 
 
+@endpoint_router.post("/{endpoint_id}/regenerate-token", response_model=EndpointResponse)
+async def regenerate_endpoint_token(
+    endpoint_id: int,
+    manager: EndpointManager = Depends(get_endpoint_manager)):
+    """重新生成接入点token"""
+    result = await manager.regenerate_endpoint_token(endpoint_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="接入点未找到")
+    return result
+
+
 # 用户管理路由
 @user_router.post("/", response_model=UserResponse)
 async def create_user(
@@ -890,19 +902,58 @@ async def clear_analytics_cache(
 
 
 # WebSocket路由
+@websocket_router.websocket("/ws")
+async def websocket_default_endpoint(websocket: WebSocket):
+    """默认WebSocket连接端点"""
+    await websocket_endpoint_with_room(websocket, "default")
+
 @websocket_router.websocket("/ws/{room}")
-async def websocket_endpoint(websocket: WebSocket, room: str = "default"):
+async def websocket_endpoint_with_room(websocket: WebSocket, room: str = "default"):
     """WebSocket连接端点"""
     from src.services.websocket_manager import connection_manager
     
-    await connection_manager.connect(websocket, room)
+    # 记录客户端信息
+    client_ip = websocket.client.host if websocket.client else "unknown"
+    user_agent = websocket.headers.get("user-agent", "unknown")
+    origin = websocket.headers.get("origin", "")
+    
+    # 在开发环境中放宽Origin检查
+    if user_agent and "mozilla" in user_agent.lower():
+        # 允许localhost/127.0.0.1的连接，以及开发环境的其他端口
+        if not origin or ("localhost" not in origin and "127.0.0.1" not in origin and "3001" not in origin):
+            logger.debug(f"WebSocket开发环境连接: Origin={origin}, User-Agent={user_agent[:100]}")
+            # 在开发模式下不拒绝连接，只记录日志
+    
+    # 记录客户端详细信息（每100次连接记录一次，避免日志过多）
+    if connection_manager.connection_count % 100 == 1:
+        logger.info(f"WebSocket客户端信息: IP={client_ip}, User-Agent={user_agent[:100]}, Origin={origin}")
+    
+    # 检查连接频率限制（更严格：1分钟内超过5次连接）
+    if not connection_manager._check_rate_limit_strict(client_ip):
+        logger.warning(f"WebSocket连接频率限制: {client_ip} 连接过于频繁")
+        await websocket.close(code=1008, reason="Rate limit exceeded")
+        return
+    
+    # 检查是否为健康检查工具 (只阻止明显的工具)
+    if any(keyword in user_agent.lower() for keyword in ["curl", "wget", "healthcheck"]):
+        logger.debug(f"WebSocket工具连接: {user_agent[:50]} from {client_ip}")
+        await websocket.close(code=1000, reason="Tool connection completed")
+        return
+    
+    # 简化连接处理 - 直接建立连接，不要求初始化消息
     try:
+        await connection_manager.connect(websocket, room)
+        
+        # 等待消息循环
         while True:
-            # 接收客户端消息
             data = await websocket.receive_text()
-            message = {"type": "echo", "data": data}
+            message = {"type": "echo", "data": data, "room": room}
             await connection_manager.send_personal_message(message, websocket)
-    except WebSocketDisconnect:
+            
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        connection_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"WebSocket连接错误: {str(e)}")
         connection_manager.disconnect(websocket)
 
 
@@ -1043,7 +1094,13 @@ async def receive_batch_webhook_alarms(
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-# 导入新的告警接入路由
+# 告警接入路由
 from src.api.webhook_ingestion import router as webhook_ingestion_router
 from src.api.prometheus_ingestion import router as prometheus_ingestion_router
 from src.api.grafana_ingestion import router as grafana_ingestion_router
+from src.api.ingestion import router as ingestion_router
+
+# API v1 Router
+# This will be the parent for all versioned API endpoints
+api_v1_router = APIRouter()
+api_v1_router.include_router(ingestion_router, prefix="/ingest", tags=["Unified Ingestion"])

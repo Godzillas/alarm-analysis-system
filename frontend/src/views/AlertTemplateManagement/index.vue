@@ -153,7 +153,7 @@
             </el-button>
             <el-dropdown @command="handleCommand">
               <el-button size="small">
-                更多<el-icon class="el-icon--right"><arrow-down /></el-icon>
+                更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -295,8 +295,9 @@ const handleDelete = async (template) => {
     await alertTemplateStore.deleteAlertTemplate(template.id)
     ElMessage.success('删除成功')
   } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('删除失败')
+    if (error !== 'cancel' && error.action !== 'cancel') {
+      console.error('删除模板失败:', error)
+      ElMessage.error(error.message || '删除失败')
     }
   }
 }

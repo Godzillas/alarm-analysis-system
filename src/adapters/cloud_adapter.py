@@ -14,8 +14,9 @@ from src.models.alarm import AlarmCreate
 class TencentCloudAdapter(BaseAlarmAdapter):
     """腾讯云告警适配器"""
     
-    def __init__(self):
+    def __init__(self, token: Optional[str] = None):
         super().__init__("tencent_cloud")
+        self.token = token
     
     def validate_data(self, raw_data: Dict[str, Any]) -> bool:
         """验证腾讯云告警数据格式"""
@@ -210,8 +211,9 @@ class TencentCloudAdapter(BaseAlarmAdapter):
 class AliCloudAdapter(BaseAlarmAdapter):
     """阿里云告警适配器"""
     
-    def __init__(self):
+    def __init__(self, token: Optional[str] = None):
         super().__init__("ali_cloud")
+        self.token = token
     
     def validate_data(self, raw_data: Dict[str, Any]) -> bool:
         """验证阿里云告警数据格式"""
@@ -418,3 +420,7 @@ class AliCloudAdapter(BaseAlarmAdapter):
             
         except (ValueError, OSError):
             return None
+
+
+# 默认使用腾讯云适配器作为CloudAdapter
+CloudAdapter = TencentCloudAdapter

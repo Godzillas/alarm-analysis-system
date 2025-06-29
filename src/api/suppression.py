@@ -22,7 +22,7 @@ from src.services.suppression_service import suppression_service
 router = APIRouter()
 
 
-@router.post("/suppressions", response_model=AlarmSuppressionResponse)
+@router.post("/", response_model=AlarmSuppressionResponse)
 async def create_suppression(
     suppression_data: AlarmSuppressionCreate,
     db: AsyncSession = Depends(get_db_session),
@@ -48,7 +48,7 @@ async def create_suppression(
         )
 
 
-@router.get("/suppressions", response_model=List[AlarmSuppressionResponse])
+@router.get("/", response_model=List[AlarmSuppressionResponse])
 async def list_suppressions(
     status: Optional[str] = Query(None, description="抑制状态"),
     suppression_type: Optional[str] = Query(None, description="抑制类型"),
@@ -68,7 +68,7 @@ async def list_suppressions(
     return [AlarmSuppressionResponse.from_orm(s) for s in suppressions]
 
 
-@router.get("/suppressions/{suppression_id}", response_model=AlarmSuppressionResponse)
+@router.get("/{suppression_id}", response_model=AlarmSuppressionResponse)
 async def get_suppression(
     suppression_id: int,
     db: AsyncSession = Depends(get_db_session),
@@ -84,7 +84,7 @@ async def get_suppression(
     return AlarmSuppressionResponse.from_orm(suppression)
 
 
-@router.put("/suppressions/{suppression_id}", response_model=AlarmSuppressionResponse)
+@router.put("/{suppression_id}", response_model=AlarmSuppressionResponse)
 async def update_suppression(
     suppression_id: int,
     update_data: AlarmSuppressionUpdate,
@@ -105,7 +105,7 @@ async def update_suppression(
     return AlarmSuppressionResponse.from_orm(suppression)
 
 
-@router.delete("/suppressions/{suppression_id}")
+@router.delete("/{suppression_id}")
 async def delete_suppression(
     suppression_id: int,
     db: AsyncSession = Depends(get_db_session),
@@ -121,7 +121,7 @@ async def delete_suppression(
     return {"message": "抑制规则删除成功"}
 
 
-@router.post("/suppressions/test", response_model=SuppressionTestResult)
+@router.post("/test", response_model=SuppressionTestResult)
 async def test_suppression_rule(
     test_request: SuppressionTestRequest,
     current_user: User = Depends(get_current_admin_user)
@@ -141,7 +141,7 @@ async def test_suppression_rule(
         )
 
 
-@router.get("/suppressions/templates")
+@router.get("/templates")
 async def get_suppression_templates(
     current_user: User = Depends(get_current_user)
 ):
@@ -213,7 +213,7 @@ async def create_dependency_map(
 
 # 抑制状态和统计
 
-@router.get("/suppressions/stats/summary")
+@router.get("/stats/summary")
 async def get_suppression_stats(
     days: int = Query(7, ge=1, le=90, description="统计天数"),
     db: AsyncSession = Depends(get_db_session),
@@ -232,7 +232,7 @@ async def get_suppression_stats(
     }
 
 
-@router.post("/suppressions/{suppression_id}/pause")
+@router.post("/{suppression_id}/pause")
 async def pause_suppression(
     suppression_id: int,
     db: AsyncSession = Depends(get_db_session),
@@ -252,7 +252,7 @@ async def pause_suppression(
     return {"message": "抑制规则已暂停"}
 
 
-@router.post("/suppressions/{suppression_id}/resume")
+@router.post("/{suppression_id}/resume")
 async def resume_suppression(
     suppression_id: int,
     db: AsyncSession = Depends(get_db_session),
@@ -272,7 +272,7 @@ async def resume_suppression(
     return {"message": "抑制规则已恢复"}
 
 
-@router.post("/suppressions/reload-cache")
+@router.post("/reload-cache")
 async def reload_suppression_cache(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_admin_user)
@@ -290,7 +290,7 @@ async def reload_suppression_cache(
 
 # 抑制规则条件验证
 
-@router.post("/suppressions/validate-conditions")
+@router.post("/validate-conditions")
 async def validate_suppression_conditions(
     conditions: Dict[str, Any],
     current_user: User = Depends(get_current_admin_user)
@@ -310,7 +310,7 @@ async def validate_suppression_conditions(
 
 # 抑制日志查询
 
-@router.get("/suppressions/{suppression_id}/logs")
+@router.get("/{suppression_id}/logs")
 async def get_suppression_logs(
     suppression_id: int,
     limit: int = Query(50, ge=1, le=1000, description="限制数量"),
@@ -332,7 +332,7 @@ async def get_suppression_logs(
 
 # 批量操作
 
-@router.post("/suppressions/batch-pause")
+@router.post("/batch-pause")
 async def batch_pause_suppressions(
     suppression_ids: List[int],
     db: AsyncSession = Depends(get_db_session),
@@ -358,7 +358,7 @@ async def batch_pause_suppressions(
     return results
 
 
-@router.post("/suppressions/batch-resume")
+@router.post("/batch-resume")
 async def batch_resume_suppressions(
     suppression_ids: List[int],
     db: AsyncSession = Depends(get_db_session),

@@ -18,9 +18,8 @@ from src.core.exceptions import (
     DatabaseException, ValidationException,
     ServiceUnavailableException
 )
-from src.models.subscription import (
-    AlarmNotification, NotificationChannel,
-    NotificationStatus, NotificationTemplate
+from src.models.alarm import (
+    NotificationLog, NotificationTemplate
 )
 
 logger = get_logger(__name__)
@@ -34,7 +33,7 @@ class NotificationSender(ABC):
         self.logger = logger
     
     @abstractmethod
-    async def send(self, notification: AlarmNotification) -> Dict[str, Any]:
+    async def send(self, notification: NotificationLog) -> Dict[str, Any]:
         """发送通知"""
         pass
     
@@ -47,7 +46,7 @@ class NotificationSender(ABC):
 class EmailSender(NotificationSender):
     """邮件发送器"""
     
-    async def send(self, notification: AlarmNotification) -> Dict[str, Any]:
+    async def send(self, notification: NotificationLog) -> Dict[str, Any]:
         """发送邮件"""
         try:
             import aiosmtplib
@@ -97,7 +96,7 @@ class EmailSender(NotificationSender):
 class WebhookSender(NotificationSender):
     """Webhook发送器"""
     
-    async def send(self, notification: AlarmNotification) -> Dict[str, Any]:
+    async def send(self, notification: NotificationLog) -> Dict[str, Any]:
         """发送Webhook"""
         try:
             # 构建payload
@@ -181,7 +180,7 @@ class WebhookSender(NotificationSender):
 class SlackSender(NotificationSender):
     """Slack发送器"""
     
-    async def send(self, notification: AlarmNotification) -> Dict[str, Any]:
+    async def send(self, notification: NotificationLog) -> Dict[str, Any]:
         """发送Slack消息"""
         try:
             # 构建Slack消息格式
@@ -239,7 +238,7 @@ class SlackSender(NotificationSender):
         """验证Slack配置"""
         return 'bot_token' in self.config
     
-    def _get_severity_emoji(self, notification: AlarmNotification) -> str:
+    def _get_severity_emoji(self, notification: NotificationLog) -> str:
         """根据优先级获取emoji"""
         priority_emoji = {
             "urgent": ":rotating_light:",
@@ -249,7 +248,7 @@ class SlackSender(NotificationSender):
         }
         return priority_emoji.get(notification.priority, ":information_source:")
     
-    def _get_severity_color(self, notification: AlarmNotification) -> str:
+    def _get_severity_color(self, notification: NotificationLog) -> str:
         """根据优先级获取颜色"""
         priority_colors = {
             "urgent": "danger",
@@ -260,10 +259,205 @@ class SlackSender(NotificationSender):
         return priority_colors.get(notification.priority, "good")
 
 
+class FeishuSender(NotificationSender):
+    """飞书机器人发送器"""
+    
+    async def send(self, notification: NotificationLog) -> Dict[str, Any]:
+        """发送飞书消息"""
+        try:
+            webhook_url = self.config.get('webhook_url')
+            if not webhook_url:
+                return {
+                    "success": False,
+                    "error": "Missing webhook_url in configuration",
+                    "error_code": "MISSING_WEBHOOK_URL"
+                }
+            
+            # 构建飞书消息
+            message = self._build_feishu_message(notification)
+            
+            timeout = aiohttp.ClientTimeout(total=self.config.get('timeout', 30))
+            
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(webhook_url, json=message) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if result.get('StatusCode') == 0:
+                            return {
+                                "success": True,
+                                "external_id": f"feishu_{notification.id}_{datetime.utcnow().timestamp()}",
+                                "response_status": response.status
+                            }
+                        else:
+                            return {
+                                "success": False,
+                                "error": f"Feishu API error: {result.get('StatusMessage', 'Unknown error')}",
+                                "error_code": "FEISHU_API_ERROR"
+                            }
+                    else:
+                        error_text = await response.text()
+                        return {
+                            "success": False,
+                            "error": f"HTTP {response.status}: {error_text}",
+                            "error_code": f"HTTP_{response.status}"
+                        }
+                        
+        except asyncio.TimeoutError:
+            return {
+                "success": False,
+                "error": "Feishu request timeout",
+                "error_code": "TIMEOUT"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "error_code": "FEISHU_SEND_FAILED"
+            }
+    
+    def _build_feishu_message(self, notification: NotificationLog) -> Dict[str, Any]:
+        """构建飞书消息体"""
+        message_type = self.config.get('message_type', 'interactive')
+        
+        if message_type == 'text':
+            return {
+                "msg_type": "text",
+                "content": {
+                    "text": f"{notification.subject}\n\n{notification.content}"
+                }
+            }
+        elif message_type == 'rich_text':
+            return {
+                "msg_type": "rich_text",
+                "content": {
+                    "rich_text": notification.html_content or notification.content
+                }
+            }
+        else:  # interactive card
+            return {
+                "msg_type": "interactive",
+                "card": self._build_interactive_card(notification)
+            }
+    
+    def _build_interactive_card(self, notification: NotificationLog) -> Dict[str, Any]:
+        """构建飞书交互式卡片"""
+        # 根据优先级确定颜色
+        priority_colors = {
+            "urgent": "red",
+            "high": "orange",
+            "normal": "blue", 
+            "low": "grey"
+        }
+        color = priority_colors.get(notification.priority, "blue")
+        
+        card = {
+            "config": {
+                "wide_screen_mode": True
+            },
+            "header": {
+                "template": color,
+                "title": {
+                    "content": notification.subject or "告警通知",
+                    "tag": "plain_text"
+                }
+            },
+            "elements": []
+        }
+        
+        # 添加基本信息字段
+        info_fields = [
+            {
+                "is_short": True,
+                "text": {
+                    "content": f"**优先级:** {notification.priority}",
+                    "tag": "lark_md"
+                }
+            },
+            {
+                "is_short": True,
+                "text": {
+                    "content": f"**通知ID:** {notification.id}",
+                    "tag": "lark_md"
+                }
+            }
+        ]
+        
+        if hasattr(notification, 'alarm_id') and notification.alarm_id:
+            info_fields.append({
+                "is_short": True,
+                "text": {
+                    "content": f"**告警ID:** {notification.alarm_id}",
+                    "tag": "lark_md"
+                }
+            })
+        
+        card["elements"].append({
+            "tag": "div",
+            "fields": info_fields
+        })
+        
+        # 添加通知内容
+        if notification.content:
+            card["elements"].append({
+                "tag": "div",
+                "text": {
+                    "content": notification.content,
+                    "tag": "lark_md"
+                }
+            })
+        
+        # 添加时间信息
+        card["elements"].append({
+            "tag": "div",
+            "text": {
+                "content": f"**发送时间:** {notification.created_at.strftime('%Y-%m-%d %H:%M:%S')}",
+                "tag": "lark_md"
+            }
+        })
+        
+        # 添加操作按钮（如果启用）
+        if self.config.get('add_action_buttons', True) and hasattr(notification, 'alarm_id') and notification.alarm_id:
+            card["elements"].append({
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {
+                            "content": "确认告警",
+                            "tag": "plain_text"
+                        },
+                        "type": "primary",
+                        "value": {
+                            "action": "acknowledge",
+                            "alarm_id": notification.alarm_id
+                        }
+                    },
+                    {
+                        "tag": "button",
+                        "text": {
+                            "content": "解决告警",
+                            "tag": "plain_text"
+                        },
+                        "type": "danger",
+                        "value": {
+                            "action": "resolve",
+                            "alarm_id": notification.alarm_id
+                        }
+                    }
+                ]
+            })
+        
+        return card
+    
+    async def validate_config(self) -> bool:
+        """验证飞书配置"""
+        return 'webhook_url' in self.config
+
+
 class SMSSender(NotificationSender):
     """短信发送器"""
     
-    async def send(self, notification: AlarmNotification) -> Dict[str, Any]:
+    async def send(self, notification: NotificationLog) -> Dict[str, Any]:
         """发送短信"""
         try:
             # 这里需要集成具体的短信服务商API
@@ -303,6 +497,7 @@ class NotificationService:
             "email": EmailSender,
             "webhook": WebhookSender,
             "slack": SlackSender,
+            "feishu": FeishuSender,
             "sms": SMSSender
         }
     
@@ -311,18 +506,18 @@ class NotificationService:
         async with async_session_maker() as session:
             try:
                 # 获取通知记录
-                notification = await session.get(AlarmNotification, notification_id)
+                notification = await session.get(NotificationLog, notification_id)
                 if not notification:
                     self.logger.error(f"Notification {notification_id} not found")
                     return False
                 
                 # 检查状态
-                if notification.status != NotificationStatus.PENDING:
+                if notification.status != "pending":
                     self.logger.warning(f"Notification {notification_id} status is {notification.status}")
                     return False
                 
                 # 更新状态为发送中
-                notification.status = NotificationStatus.SENDING
+                notification.status = "sending"
                 await session.commit()
                 
                 # 获取发送器
@@ -378,7 +573,7 @@ class NotificationService:
                 
                 # 尝试标记为失败
                 try:
-                    notification = await session.get(AlarmNotification, notification_id)
+                    notification = await session.get(NotificationLog, notification_id)
                     if notification:
                         await self._mark_failed(session, notification, str(e))
                         await session.commit()
@@ -421,14 +616,14 @@ class NotificationService:
                 
                 # 查找需要重试的通知
                 from sqlalchemy import select, and_
-                query = select(AlarmNotification).where(
+                query = select(NotificationLog).where(
                     and_(
-                        AlarmNotification.status == NotificationStatus.FAILED,
-                        AlarmNotification.retry_count < AlarmNotification.max_retries,
-                        AlarmNotification.created_at >= cutoff_time,
+                        NotificationLog.status == NotificationStatus.FAILED,
+                        NotificationLog.retry_count < NotificationLog.max_retries,
+                        NotificationLog.created_at >= cutoff_time,
                         or_(
-                            AlarmNotification.next_retry_at.is_(None),
-                            AlarmNotification.next_retry_at <= datetime.utcnow()
+                            NotificationLog.next_retry_at.is_(None),
+                            NotificationLog.next_retry_at <= datetime.utcnow()
                         )
                     )
                 )
@@ -468,31 +663,31 @@ class NotificationService:
                 start_date = datetime.utcnow() - timedelta(days=days)
                 
                 # 总体统计
-                total_query = select(func.count(AlarmNotification.id)).where(
-                    AlarmNotification.created_at >= start_date
+                total_query = select(func.count(NotificationLog.id)).where(
+                    NotificationLog.created_at >= start_date
                 )
                 total_result = await session.execute(total_query)
                 total_notifications = total_result.scalar()
                 
                 # 按状态统计
                 status_query = select(
-                    AlarmNotification.status,
-                    func.count(AlarmNotification.id).label('count')
+                    NotificationLog.status,
+                    func.count(NotificationLog.id).label('count')
                 ).where(
-                    AlarmNotification.created_at >= start_date
-                ).group_by(AlarmNotification.status)
+                    NotificationLog.created_at >= start_date
+                ).group_by(NotificationLog.status)
                 
                 status_result = await session.execute(status_query)
                 status_stats = {row.status: row.count for row in status_result}
                 
                 # 按渠道统计
                 channel_query = select(
-                    AlarmNotification.channel,
-                    func.count(AlarmNotification.id).label('count'),
-                    func.avg(AlarmNotification.processing_time_ms).label('avg_processing_time')
+                    NotificationLog.channel,
+                    func.count(NotificationLog.id).label('count'),
+                    func.avg(NotificationLog.processing_time_ms).label('avg_processing_time')
                 ).where(
-                    AlarmNotification.created_at >= start_date
-                ).group_by(AlarmNotification.channel)
+                    NotificationLog.created_at >= start_date
+                ).group_by(NotificationLog.channel)
                 
                 channel_result = await session.execute(channel_query)
                 channel_stats = [
@@ -526,7 +721,7 @@ class NotificationService:
     async def _mark_failed(
         self, 
         session,
-        notification: AlarmNotification, 
+        notification: NotificationLog, 
         error_message: str
     ):
         """标记通知为失败"""
@@ -544,7 +739,7 @@ class NotificationService:
     async def _handle_send_failure(
         self,
         session,
-        notification: AlarmNotification,
+        notification: NotificationLog,
         result: Dict[str, Any]
     ):
         """处理发送失败"""

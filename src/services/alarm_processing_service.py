@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from src.core.database import async_session_maker
 from src.core.logging import get_logger
+from src.services.alarm_lifecycle_manager import lifecycle_manager, LifecycleEventType
 from src.core.exceptions import (
     DatabaseException, ValidationException, 
     ResourceNotFoundException, AuthorizationException
@@ -104,6 +105,13 @@ class AlarmProcessingService:
                 
                 await session.commit()
                 
+                # 触发生命周期事件
+                await lifecycle_manager.trigger_lifecycle_event(
+                    alarm_id, 
+                    LifecycleEventType.CREATED,
+                    {"processing_id": processing.id, "priority": processing_data.priority}
+                )
+                
                 self.logger.info(
                     f"Created alarm processing for alarm {alarm_id}",
                     extra={
@@ -165,6 +173,13 @@ class AlarmProcessingService:
                 
                 await session.commit()
                 
+                # 触发生命周期事件
+                await lifecycle_manager.trigger_lifecycle_event(
+                    processing.alarm_id,
+                    LifecycleEventType.ACKNOWLEDGED,
+                    {"processing_id": processing_id, "response_time": processing.response_time_minutes}
+                )
+                
                 self.logger.info(
                     f"Acknowledged alarm processing {processing_id}",
                     extra={
@@ -219,6 +234,13 @@ class AlarmProcessingService:
                 )
                 
                 await session.commit()
+                
+                # 触发生命周期事件
+                await lifecycle_manager.trigger_lifecycle_event(
+                    processing.alarm_id,
+                    LifecycleEventType.ASSIGNED,
+                    {"processing_id": processing_id, "assigned_to": assigned_to}
+                )
                 
                 self.logger.info(
                     f"Assigned alarm processing {processing_id} to user {assigned_to}",
@@ -278,6 +300,14 @@ class AlarmProcessingService:
                 )
                 
                 await session.commit()
+                
+                # 触发生命周期事件
+                if new_status == AlarmProcessingStatus.IN_PROGRESS:
+                    await lifecycle_manager.trigger_lifecycle_event(
+                        processing.alarm_id,
+                        LifecycleEventType.IN_PROGRESS,
+                        {"processing_id": processing_id, "old_status": old_status.value, "new_status": new_status.value}
+                    )
                 
                 self.logger.info(
                     f"Updated status for processing {processing_id}: {old_status} -> {new_status}",
@@ -343,6 +373,17 @@ class AlarmProcessingService:
                 
                 await session.commit()
                 
+                # 触发生命周期事件
+                await lifecycle_manager.trigger_lifecycle_event(
+                    processing.alarm_id,
+                    LifecycleEventType.RESOLVED,
+                    {
+                        "processing_id": processing_id,
+                        "resolution_method": resolution_method.value,
+                        "resolution_time": processing.resolution_time_minutes
+                    }
+                )
+                
                 self.logger.info(
                     f"Resolved alarm processing {processing_id}",
                     extra={
@@ -406,6 +447,18 @@ class AlarmProcessingService:
                 )
                 
                 await session.commit()
+                
+                # 触发生命周期事件
+                await lifecycle_manager.trigger_lifecycle_event(
+                    processing.alarm_id,
+                    LifecycleEventType.ESCALATED,
+                    {
+                        "processing_id": processing_id,
+                        "escalated_to": escalated_to,
+                        "escalation_level": processing.escalation_level,
+                        "reason": escalation_reason
+                    }
+                )
                 
                 self.logger.warning(
                     f"Escalated alarm processing {processing_id} to user {escalated_to}",

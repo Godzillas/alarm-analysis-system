@@ -12,6 +12,8 @@ from enum import Enum
 import logging
 import re
 from dataclasses import dataclass
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 from sqlalchemy import select, update, and_, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,7 +60,7 @@ class AlarmFingerprint:
             },
             FingerprintStrategy.NORMAL: {
                 'required': ['title', 'host', 'service'],
-                'optional': ['severity', 'environment'],
+                'optional': ['environment'],
                 'normalize': True
             },
             FingerprintStrategy.LOOSE: {
@@ -119,7 +121,7 @@ class AlarmFingerprint:
         # 字段特定的标准化
         if field == 'title':
             # 移除时间戳、数字等变化信息
-            value = re.sub(r'\d{4}-\d{2}-\d{2}[\s\T]\d{2}:\d{2}:\d{2}', '<timestamp>', value)
+            value = re.sub(r'\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}', '<timestamp>', value)
             value = re.sub(r'\d+\.?\d*%', '<percentage>', value)
             value = re.sub(r'\d+\.?\d*\s?(mb|gb|kb|bytes?)', '<size>', value)
             value = re.sub(r'\d+\.?\d*\s?(ms|sec|min|hour)s?', '<duration>', value)
@@ -131,7 +133,7 @@ class AlarmFingerprint:
         
         elif field == 'service':
             # 标准化服务名
-            value = re.sub(r'-\d+$', '', value)  # 移除版本号
+            value = re.sub(r'[-_][a-zA-Z0-9.]+', '', value)  # 移除版本号或后缀
         
         return value
     
@@ -187,24 +189,26 @@ class SimilarityCalculator:
             return 0.0
     
     def _calculate_text_similarity(self, text1: str, text2: str) -> float:
-        """计算文本相似度"""
+        """计算文本相似度 (TF-IDF + 余弦相似度)"""
         if not text1 or not text2:
             return 0.0
         
         if text1 == text2:
             return 1.0
         
-        # 使用Jaccard相似度
-        set1 = set(text1.lower().split())
-        set2 = set(text2.lower().split())
+        # 创建TF-IDF向量化器
+        # 这里每次都重新创建，是为了简化，实际生产环境可能需要预训练或缓存
+        vectorizer = TfidfVectorizer().fit([text1, text2])
         
-        if not set1 and not set2:
-            return 1.0
+        # 转换文本为TF-IDF向量
+        tfidf_text1 = vectorizer.transform([text1])
+        tfidf_text2 = vectorizer.transform([text2])
         
-        intersection = len(set1.intersection(set2))
-        union = len(set1.union(set2))
+        # 计算余弦相似度
+        # cosine_similarity返回一个矩阵，取[0][0]即为两个向量的相似度
+        similarity = cosine_similarity(tfidf_text1, tfidf_text2)[0][0]
         
-        return intersection / union if union > 0 else 0.0
+        return float(similarity)
     
     def _calculate_tags_similarity(self, tags1: Dict, tags2: Dict) -> float:
         """计算标签相似度"""
@@ -251,8 +255,7 @@ class DeduplicationEngine:
             self.redis_client = None
     
     async def process_alarm(self, alarm_data: Dict[str, Any]) -> Tuple[bool, Optional[int]]:
-        """
-        处理告警去重
+        """处理告警去重
         返回: (是否为重复告警, 原始告警ID)
         """
         if not self.config.enabled:

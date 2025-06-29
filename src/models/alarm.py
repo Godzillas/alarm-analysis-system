@@ -65,6 +65,7 @@ class AlarmTable(Base):
     last_occurrence = Column(DateTime, default=datetime.utcnow)
     
     correlation_id = Column(String(100), nullable=True, index=True)
+    fingerprint = Column(String(255), nullable=True, index=True, comment="Unique fingerprint for deduplication")
     parent_alarm_id = Column(Integer, nullable=True)
     
     is_duplicate = Column(Boolean, default=False)
@@ -285,18 +286,142 @@ class User(Base):
     # RBAC 角色关联将在 rbac.py 中定义以避免循环导入
 
 
-class UserSubscription(Base):
-    __tablename__ = "user_subscriptions"
+class SubscriptionType(str, Enum):
+    REAL_TIME = "real_time"    # 实时通知
+    DIGEST = "digest"          # 摘要通知
+    ESCALATION = "escalation"  # 升级通知
+    CUSTOM = "custom"          # 自定义规则
+
+
+class NotificationTemplate(Base):
+    __tablename__ = "notification_templates"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False, index=True)
-    subscription_type = Column(String(20), nullable=False)
-    filters = Column(JSON, nullable=False)
-    notification_methods = Column(JSON, nullable=False)
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(Text)
+    template_type = Column(String(20), nullable=False)  # simple, rich, markdown, json
+    content_type = Column(String(20), nullable=False)   # feishu, email, webhook, etc.
+    
+    # 模板内容
+    title_template = Column(Text, nullable=False)
+    content_template = Column(Text, nullable=False)
+    footer_template = Column(Text)
+    subject_template = Column(Text, nullable=True) # Added for email subject
+    html_template = Column(Text, nullable=True) # Added for HTML content
+    
+    # 模板变量说明
+    variables = Column(JSON)  # 可用变量列表和说明
+    
+    # 样式配置
+    style_config = Column(JSON)  # 颜色、字体等样式配置
+    
+    is_system_template = Column(Boolean, default=False)  # 是否为系统模板
     enabled = Column(Boolean, default=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey('users.id'), nullable=True)
+
+
+class ContactPoint(Base):
+    __tablename__ = "contact_points"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(Text)
+    contact_type = Column(String(20), nullable=False, index=True)  # email, feishu, webhook, etc.
+    
+    # 联系点配置
+    config = Column(JSON, nullable=False)  # 具体配置（webhook URL、邮箱等）
+    
+    # 通知模板
+    template_id = Column(Integer, ForeignKey('notification_templates.id'), nullable=True)
+    template = relationship("NotificationTemplate")
+    
+    # 通知设置
+    retry_count = Column(Integer, default=3)
+    retry_interval = Column(Integer, default=300)  # 重试间隔(秒)
+    timeout = Column(Integer, default=30)  # 超时时间(秒)
+    
+    # 测试和状态
+    last_test_at = Column(DateTime, nullable=True)
+    last_test_success = Column(Boolean, nullable=True)
+    test_error_message = Column(Text, nullable=True)
+    
+    # 统计信息
+    total_sent = Column(Integer, default=0)
+    success_count = Column(Integer, default=0)
+    failure_count = Column(Integer, default=0)
+    last_sent = Column(DateTime, nullable=True)
+    last_success = Column(DateTime, nullable=True)
+    last_failure = Column(DateTime, nullable=True)
+    
+    # 系统关联
+    system_id = Column(Integer, ForeignKey('systems.id'), nullable=True, index=True)
+    system = relationship("System", back_populates="contact_points")
+    
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey('users.id'), nullable=True)
+
+
+class UserSubscription(Base):
+    __tablename__ = "user_subscriptions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)  # 订阅名称
+    description = Column(Text)
+    
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    user = relationship("User")
+    
+    subscription_type = Column(String(20), nullable=False)  # real_time, digest, escalation, custom
+    
+    # 过滤条件
+    filters = Column(JSON, nullable=False)  # 告警过滤条件
+    
+    # 通知配置
+    contact_points = Column(JSON, nullable=False)  # 联系点ID列表
+    notification_schedule = Column(JSON)  # 通知时间安排
+    
+    # 高级配置
+    cooldown_minutes = Column(Integer, default=0)  # 冷却时间（分钟）
+    max_notifications_per_hour = Column(Integer, default=0)  # 每小时最大通知数
+    escalation_rules = Column(JSON)  # 升级规则
+    
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 统计信息
+    last_notification_at = Column(DateTime, nullable=True)
+    total_notifications_sent = Column(Integer, default=0)
+
+
+class NotificationLog(Base):
+    __tablename__ = "notification_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    subscription_id = Column(Integer, ForeignKey('user_subscriptions.id'), nullable=False)
+    alarm_id = Column(Integer, ForeignKey('alarms.id'), nullable=False)
+    contact_point_id = Column(Integer, ForeignKey('contact_points.id'), nullable=False)
+    
+    # 通知状态
+    status = Column(String(20), nullable=False)  # pending, sent, failed, retry
+    error_message = Column(Text, nullable=True)
+    retry_count = Column(Integer, default=0)
+    
+    # 通知内容
+    notification_content = Column(JSON)  # 实际发送的内容
+    
+    sent_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # 关联关系
+    subscription = relationship("UserSubscription")
+    alarm = relationship("AlarmTable")
+    contact_point = relationship("ContactPoint")
 
 
 class RuleGroup(Base):
@@ -341,35 +466,6 @@ class AlarmDistribution(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class ContactPoint(Base):
-    __tablename__ = "contact_points"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False, unique=True)
-    description = Column(Text)
-    contact_type = Column(String(20), nullable=False, index=True)
-    config = Column(JSON, nullable=False)
-    enabled = Column(Boolean, default=True)
-    
-    # 通知设置
-    retry_count = Column(Integer, default=3)
-    retry_interval = Column(Integer, default=300)  # 重试间隔(秒)
-    timeout = Column(Integer, default=30)  # 超时时间(秒)
-    
-    # 统计信息
-    total_sent = Column(Integer, default=0)
-    success_count = Column(Integer, default=0)
-    failure_count = Column(Integer, default=0)
-    last_sent = Column(DateTime, nullable=True)
-    last_success = Column(DateTime, nullable=True)
-    last_failure = Column(DateTime, nullable=True)
-    
-    # 系统关联
-    system_id = Column(Integer, ForeignKey('systems.id'), nullable=True, index=True)
-    system = relationship("System", back_populates="contact_points")
-    
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class AlertTemplate(Base):
@@ -674,6 +770,156 @@ class AlertTemplateResponse(BaseModel):
     last_used: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# 通知模板相关模型
+class NotificationTemplateCreate(BaseModel):
+    name: str = Field(..., description="模板名称")
+    description: Optional[str] = Field(None, description="模板描述")
+    template_type: str = Field(..., description="模板类型")  # simple, rich, markdown, json
+    content_type: str = Field(..., description="内容类型")   # feishu, email, webhook, etc.
+    title_template: str = Field(..., description="标题模板")
+    content_template: str = Field(..., description="内容模板")
+    footer_template: Optional[str] = Field(None, description="页脚模板")
+    subject_template: Optional[str] = Field(None, description="主题模板")
+    html_template: Optional[str] = Field(None, description="HTML内容模板")
+    variables: Optional[Dict[str, Any]] = Field(None, description="模板变量")
+    style_config: Optional[Dict[str, Any]] = Field(None, description="样式配置")
+
+
+class NotificationTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    template_type: Optional[str] = None
+    content_type: Optional[str] = None
+    title_template: Optional[str] = None
+    content_template: Optional[str] = None
+    footer_template: Optional[str] = None
+    variables: Optional[Dict[str, Any]] = None
+    style_config: Optional[Dict[str, Any]] = None
+    enabled: Optional[bool] = None
+
+
+class NotificationTemplateResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    template_type: str
+    content_type: str
+    title_template: str
+    content_template: str
+    footer_template: Optional[str]
+    variables: Optional[Dict[str, Any]]
+    style_config: Optional[Dict[str, Any]]
+    is_system_template: bool
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# 联系点相关模型
+class ContactPointCreateNew(BaseModel):
+    name: str = Field(..., description="联系点名称")
+    description: Optional[str] = Field(None, description="联系点描述")
+    contact_type: str = Field(..., description="联系点类型")  # feishu, email, webhook, etc.
+    config: Dict[str, Any] = Field(..., description="联系点配置")
+    template_id: Optional[int] = Field(None, description="通知模板ID")
+
+
+class ContactPointUpdateNew(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    contact_type: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
+    template_id: Optional[int] = None
+    enabled: Optional[bool] = None
+
+
+class ContactPointResponseNew(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    contact_type: str
+    config: Dict[str, Any]
+    template_id: Optional[int]
+    template: Optional[NotificationTemplateResponse]
+    last_test_at: Optional[datetime]
+    last_test_success: Optional[bool]
+    test_error_message: Optional[str]
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# 订阅相关模型
+class UserSubscriptionCreateNew(BaseModel):
+    name: str = Field(..., description="订阅名称")
+    description: Optional[str] = Field(None, description="订阅描述")
+    subscription_type: str = Field(..., description="订阅类型")  # real_time, digest, escalation, custom
+    filters: Dict[str, Any] = Field(..., description="告警过滤条件")
+    contact_points: List[int] = Field(..., description="联系点ID列表")
+    notification_schedule: Optional[Dict[str, Any]] = Field(None, description="通知时间安排")
+    cooldown_minutes: int = Field(0, description="冷却时间(分钟)")
+    max_notifications_per_hour: int = Field(0, description="每小时最大通知数")
+    escalation_rules: Optional[Dict[str, Any]] = Field(None, description="升级规则")
+
+
+class UserSubscriptionUpdateNew(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    subscription_type: Optional[str] = None
+    filters: Optional[Dict[str, Any]] = None
+    contact_points: Optional[List[int]] = None
+    notification_schedule: Optional[Dict[str, Any]] = None
+    cooldown_minutes: Optional[int] = None
+    max_notifications_per_hour: Optional[int] = None
+    escalation_rules: Optional[Dict[str, Any]] = None
+    enabled: Optional[bool] = None
+
+
+class UserSubscriptionResponseNew(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    user_id: int
+    subscription_type: str
+    filters: Dict[str, Any]
+    contact_points: List[int]
+    notification_schedule: Optional[Dict[str, Any]]
+    cooldown_minutes: int
+    max_notifications_per_hour: int
+    escalation_rules: Optional[Dict[str, Any]]
+    enabled: bool
+    last_notification_at: Optional[datetime]
+    total_notifications_sent: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# 通知日志模型
+class NotificationLogResponse(BaseModel):
+    id: int
+    subscription_id: int
+    alarm_id: int
+    contact_point_id: int
+    status: str  # pending, sent, failed, retry
+    error_message: Optional[str]
+    retry_count: int
+    notification_content: Optional[Dict[str, Any]]
+    sent_at: Optional[datetime]
+    created_at: datetime
     
     class Config:
         from_attributes = True

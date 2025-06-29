@@ -26,7 +26,7 @@ def get_current_user_id() -> int:
     return 1
 
 
-@router.post("/solutions", response_model=DataResponse[dict])
+@router.post("/", response_model=DataResponse[dict])
 async def create_solution(
     solution_data: SolutionCreate,
     service: SolutionService = Depends(get_solution_service),
@@ -50,7 +50,7 @@ async def create_solution(
         raise to_http_exception(e)
 
 
-@router.get("/solutions/categories/{category}", response_model=ListResponse[dict])
+@router.get("/categories/{category}", response_model=ListResponse[dict])
 async def get_solutions_by_category(
     category: str,
     limit: int = Query(50, le=100),
@@ -82,7 +82,7 @@ async def get_solutions_by_category(
         raise to_http_exception(e)
 
 
-@router.get("/solutions/search", response_model=ListResponse[dict])
+@router.get("/search", response_model=ListResponse[dict])
 async def search_solutions(
     q: str = Query(..., description="搜索关键词"),
     categories: Optional[List[str]] = Query(None),
@@ -116,7 +116,7 @@ async def search_solutions(
         raise to_http_exception(e)
 
 
-@router.get("/solutions/recommendations", response_model=ListResponse[dict])
+@router.get("/recommendations", response_model=ListResponse[dict])
 async def get_recommended_solutions(
     alarm_severity: str,
     alarm_source: str,
@@ -151,7 +151,7 @@ async def get_recommended_solutions(
         raise to_http_exception(e)
 
 
-@router.get("/solutions/{solution_id}", response_model=DataResponse[dict])
+@router.get("/{solution_id}", response_model=DataResponse[dict])
 async def get_solution_detail(
     solution_id: int,
     db: AsyncSession = Depends(get_db_session)
@@ -200,7 +200,7 @@ async def get_solution_detail(
         raise HTTPException(status_code=500, detail=f"获取解决方案详情失败: {str(e)}")
 
 
-@router.post("/solutions/{solution_id}/apply", response_model=DataResponse[dict])
+@router.post("/{solution_id}/apply", response_model=DataResponse[dict])
 async def apply_solution(
     solution_id: int,
     processing_id: int,
@@ -225,7 +225,7 @@ async def apply_solution(
         raise to_http_exception(e)
 
 
-@router.post("/solutions/{solution_id}/approve", response_model=DataResponse[dict])
+@router.post("/{solution_id}/approve", response_model=DataResponse[dict])
 async def approve_solution(
     solution_id: int,
     service: SolutionService = Depends(get_solution_service),
@@ -248,7 +248,7 @@ async def approve_solution(
         raise to_http_exception(e)
 
 
-@router.get("/solutions/statistics/overview", response_model=DataResponse[dict])
+@router.get("/statistics/overview", response_model=DataResponse[dict])
 async def get_solution_statistics(
     days: int = Query(30, ge=1, le=365),
     service: SolutionService = Depends(get_solution_service)
@@ -262,7 +262,7 @@ async def get_solution_statistics(
         raise to_http_exception(e)
 
 
-@router.get("/solutions/categories", response_model=DataResponse[List[str]])
+@router.get("/categories", response_model=DataResponse[List[str]])
 async def get_solution_categories(
     db: AsyncSession = Depends(get_db_session)
 ):
@@ -284,7 +284,7 @@ async def get_solution_categories(
         raise HTTPException(status_code=500, detail=f"获取分类失败: {str(e)}")
 
 
-@router.get("/solutions/tags", response_model=DataResponse[List[str]])
+@router.get("/tags", response_model=DataResponse[List[str]])
 async def get_solution_tags(
     db: AsyncSession = Depends(get_db_session)
 ):

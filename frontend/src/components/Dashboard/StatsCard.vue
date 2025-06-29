@@ -27,6 +27,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 
 const props = defineProps({
   title: {

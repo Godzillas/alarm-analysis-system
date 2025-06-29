@@ -13,10 +13,10 @@ from src.core.database import get_db_session
 from src.core.responses import HealthResponse, data_response
 from src.core.exceptions import ServiceUnavailableException
 
-router = APIRouter()
+router = APIRouter(prefix="/health")
 
 
-@router.get("/health", response_model=HealthResponse)
+@router.get("/", response_model=HealthResponse)
 async def health_check(db: AsyncSession = Depends(get_db_session)):
     """系统健康检查"""
     
@@ -80,7 +80,7 @@ async def health_check(db: AsyncSession = Depends(get_db_session)):
     )
 
 
-@router.get("/health/ready")
+@router.get("/ready")
 async def readiness_check(db: AsyncSession = Depends(get_db_session)):
     """就绪检查 - 检查所有依赖服务是否可用"""
     
@@ -99,7 +99,7 @@ async def readiness_check(db: AsyncSession = Depends(get_db_session)):
         raise ServiceUnavailableException("System not ready", {"error": str(e)})
 
 
-@router.get("/health/live")
+@router.get("/live")
 async def liveness_check():
     """存活检查 - 简单的应用程序存活检查"""
     return {
