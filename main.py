@@ -260,7 +260,7 @@ async def spa_fallback(full_path: str):
                 <h1>🚧 开发模式</h1>
                 <p>你正在尝试访问: <code style="background: #f5f5f5; padding: 2px 6px;">/{full_path}</code></p>
                 <p>请访问前端开发服务器查看最新修改:</p>
-                <p><a href="http://localhost:3001/#{full_path}" style="font-size: 18px; color: #409eff;">http://localhost:3001/#{full_path}</a></p>
+                <p><a href="http://localhost:3000/#{full_path}" style="font-size: 18px; color: #409eff;">http://localhost:3000/#{full_path}</a></p>
                 <p><small>后端API运行在: <a href="/docs">http://localhost:8000/docs</a></small></p>
             </body>
         </html>
@@ -332,7 +332,7 @@ async def root():
             <body style="font-family: Arial; text-align: center; padding: 50px;">
                 <h1>🚧 开发模式</h1>
                 <p>请访问前端开发服务器查看最新修改:</p>
-                <p><a href="http://localhost:3001" style="font-size: 18px; color: #409eff;">http://localhost:3001</a></p>
+                <p><a href="http://localhost:3000" style="font-size: 18px; color: #409eff;">http://localhost:3000</a></p>
                 <p><small>后端API运行在: <a href="/docs">http://localhost:8000/docs</a></small></p>
             </body>
         </html>

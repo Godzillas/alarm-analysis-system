@@ -569,7 +569,9 @@ const basicRules = {
 const previewUrl = computed(() => {
   if (!endpointForm.endpoint_type) return ''
   
-  const baseUrl = window.location.origin
+  // 在开发模式下使用后端API地址，生产模式下使用当前域名
+  const isDev = process.env.NODE_ENV === 'development'
+  const baseUrl = isDev ? 'http://localhost:8000' : window.location.origin
   const token = 'YOUR_TOKEN_HERE'
   
   switch (endpointForm.endpoint_type) {
@@ -783,7 +785,18 @@ const stopListening = () => {
 // 发送测试告警数据
 const sendTestAlarm = async () => {
   try {
-    const testUrl = previewUrl.value.replace('YOUR_TOKEN_HERE', 'test-token')
+    // 在创建模式下使用测试端点，编辑模式下使用真实端点
+    let testUrl
+    if (isEdit.value && currentEndpoint.value && currentEndpoint.value.api_token) {
+      // 编辑模式：使用真实的token
+      testUrl = previewUrl.value.replace('YOUR_TOKEN_HERE', currentEndpoint.value.api_token)
+    } else {
+      // 创建模式：使用测试端点
+      const isDev = process.env.NODE_ENV === 'development'
+      const baseUrl = isDev ? 'http://localhost:8000' : window.location.origin
+      testUrl = `${baseUrl}/api/webhook/test-endpoint`
+    }
+    
     let testData = {}
     
     // 根据接入点类型构造不同的测试数据
@@ -869,14 +882,8 @@ const sendTestAlarm = async () => {
         break
     }
     
-    // 如果是编辑模式，使用真实的token
-    let finalUrl = testUrl
-    if (isEdit.value && currentEndpoint.value && currentEndpoint.value.api_token) {
-      finalUrl = getWebhookUrl(currentEndpoint.value)
-    }
-    
     // 发送测试数据到本地接入点
-    const response = await fetch(finalUrl, {
+    const response = await fetch(testUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -906,14 +913,8 @@ const sendTestAlarm = async () => {
       ElMessage.error(`测试失败: ${response.status} ${response.statusText}`)
     }
   } catch (error) {
-    console.error('发送测试告警失败:', error)
-    addReceivedTestData({
-      timestamp: new Date().toISOString(),
-      status: 'error',
-      preview: '网络错误',
-      error: error.message
-    })
-    ElMessage.error('发送测试告警失败: ' + error.message)
+    console.error('创建测试数据失败:', error)
+    ElMessage.error('创建测试数据失败: ' + error.message)
   }
 }
 
@@ -947,7 +948,9 @@ const removeFieldMapping = (index) => {
 const saveFieldMapping = () => {
   const mapping = {}
   fieldMappings.value.forEach(item => {
-    if (item.system_field && item.external_field) {
+    if (item.system_field && item.external_field && 
+        typeof item.system_field === 'string' && 
+        typeof item.external_field === 'string') {
       mapping[item.system_field] = item.external_field
     }
   })
@@ -1020,12 +1023,14 @@ const editEndpoint = async (endpoint) => {
   Object.assign(endpointForm, { ...endpoint })
   
   // 加载字段映射
-  if (endpoint.field_mapping) {
-    fieldMappings.value = Object.entries(endpoint.field_mapping).map(([key, value]) => ({
-      system_field: key,
-      external_field: value,
-      description: getFieldDescription(key)
-    }))
+  if (endpoint.field_mapping && typeof endpoint.field_mapping === 'object') {
+    fieldMappings.value = Object.entries(endpoint.field_mapping)
+      .filter(([key, value]) => typeof key === 'string' && key.length > 0)
+      .map(([key, value]) => ({
+        system_field: String(key),
+        external_field: String(value || ''),
+        description: getFieldDescription(key)
+      }))
   }
   
   await loadAvailableSystems()
@@ -1045,14 +1050,28 @@ const getFieldDescription = (field) => {
 
 const saveEndpoint = async () => {
   try {
+    // 清理并验证表单数据
+    const cleanedForm = {
+      ...endpointForm,
+      // 确保所有字符串字段都是有效的字符串
+      name: String(endpointForm.name || ''),
+      endpoint_type: String(endpointForm.endpoint_type || 'webhook'),
+      description: String(endpointForm.description || ''),
+      data_format: String(endpointForm.data_format || 'json'),
+      // 确保field_mapping是有效的对象
+      field_mapping: endpointForm.field_mapping && typeof endpointForm.field_mapping === 'object' 
+        ? endpointForm.field_mapping 
+        : {}
+    }
+    
     if (isEdit.value) {
-      const response = await endpointApi.updateEndpoint(endpointForm.id, endpointForm)
+      const response = await endpointApi.updateEndpoint(cleanedForm.id, cleanedForm)
       const updatedEndpoint = response.data.data
       
-      const index = endpoints.value.findIndex(e => e.id === endpointForm.id)
+      const index = endpoints.value.findIndex(e => e.id === cleanedForm.id)
       if (index > -1) {
-        if (endpointForm.system_id) {
-          const selectedSystem = availableSystems.value.find(s => s.id === endpointForm.system_id)
+        if (cleanedForm.system_id) {
+          const selectedSystem = availableSystems.value.find(s => s.id === cleanedForm.system_id)
           if (selectedSystem) {
             updatedEndpoint.system_name = selectedSystem.name
           }
@@ -1064,11 +1083,11 @@ const saveEndpoint = async () => {
       }
       ElMessage.success('接入点更新成功')
     } else {
-      const response = await endpointApi.createEndpoint(endpointForm)
+      const response = await endpointApi.createEndpoint(cleanedForm)
       const newEndpoint = response.data.data
       
-      if (endpointForm.system_id) {
-        const selectedSystem = availableSystems.value.find(s => s.id === endpointForm.system_id)
+      if (cleanedForm.system_id) {
+        const selectedSystem = availableSystems.value.find(s => s.id === cleanedForm.system_id)
         if (selectedSystem) {
           newEndpoint.system_name = selectedSystem.name
         }
@@ -1083,7 +1102,8 @@ const saveEndpoint = async () => {
     dialogVisible.value = false
   } catch (error) {
     console.error('保存接入点失败:', error)
-    ElMessage.error('操作失败: ' + (error.response?.data?.detail || error.message))
+    const errorMessage = error.response?.data?.detail || error.message || '未知错误'
+    ElMessage.error('操作失败: ' + errorMessage)
   }
 }
 

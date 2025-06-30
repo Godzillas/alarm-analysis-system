@@ -29,7 +29,7 @@ cleanup() {
     fi
     # 清理端口上的进程
     lsof -ti:8000 | xargs kill -9 > /dev/null 2>&1 || true
-    lsof -ti:8080 | xargs kill -9 > /dev/null 2>&1 || true
+    lsof -ti:3000 | xargs kill -9 > /dev/null 2>&1 || true
     echo "✅ 清理完成"
     exit 0
 }
@@ -48,7 +48,7 @@ fi
 # 清理端口
 echo "🧹 清理端口..."
 lsof -ti:8000 | xargs kill -9 > /dev/null 2>&1 || true
-lsof -ti:8080 | xargs kill -9 > /dev/null 2>&1 || true
+lsof -ti:3000 | xargs kill -9 > /dev/null 2>&1 || true
 
 cd "$FRONTEND_DIR"
 
@@ -62,8 +62,8 @@ if [ "$DEV_MODE" == "dev" ]; then
     echo "🔧 启动开发模式 (热重载)..."
     
     # 启动前端开发服务器
-    echo "🎨 启动前端开发服务器 (端口8080)..."
-    npm run serve > "$PROJECT_DIR/logs/frontend.log" 2>&1 &
+    echo "🎨 启动前端开发服务器 (端口3000)..."
+    npm run dev > "$PROJECT_DIR/logs/frontend.log" 2>&1 &
     FRONTEND_PID=$!
     
     # 等待前端服务器启动
@@ -92,7 +92,7 @@ if [ "$DEV_MODE" == "dev" ]; then
     sleep 2
     FRONTEND_URL=$(grep -o "http://localhost:[0-9]*" logs/frontend.log | tail -1)
     if [ -z "$FRONTEND_URL" ]; then
-        FRONTEND_URL="http://localhost:3001"
+        FRONTEND_URL="http://localhost:3000"
     fi
     
     echo ""

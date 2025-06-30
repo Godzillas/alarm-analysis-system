@@ -1094,6 +1094,36 @@ async def receive_batch_webhook_alarms(
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
+@webhook_router.post("/test-endpoint")
+async def test_webhook_connection(
+    test_data: Dict[str, Any] = Body(...)
+):
+    """测试Webhook连接 - 不需要认证的测试端点"""
+    try:
+        logger.info(f"收到测试数据: {test_data}")
+        
+        # 根据数据结构判断可能的接入点类型
+        endpoint_type = "webhook"
+        if "alerts" in test_data and isinstance(test_data.get("alerts"), list):
+            if "generatorURL" in str(test_data):
+                endpoint_type = "prometheus"
+            elif "grafana" in str(test_data).lower():
+                endpoint_type = "grafana"
+        
+        return {
+            "status": "success",
+            "message": "测试数据接收成功",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "received_data": test_data,
+            "endpoint_type": endpoint_type,
+            "detected_format": endpoint_type
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to receive test data: {str(e)}")
+        raise HTTPException(status_code=500, detail="内部服务器错误")
+
+
 # 告警接入路由
 from src.api.webhook_ingestion import router as webhook_ingestion_router
 from src.api.prometheus_ingestion import router as prometheus_ingestion_router

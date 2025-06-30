@@ -9,14 +9,20 @@ module.exports = defineConfig({
   // 开发服务器配置
   devServer: {
     port: 3000,
+    host: 'localhost',
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
-        secure: false
+        secure: false,
+        logLevel: 'debug',
+        timeout: 10000,
+        onError: function (err, req, res) {
+          console.log('Proxy error:', err);
+        }
       },
       '/ws': {
-        target: 'ws://localhost:8000',
+        target: 'ws://127.0.0.1:8000',
         ws: true,
         changeOrigin: true
       }
